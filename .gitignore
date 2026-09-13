@@ -1,0 +1,9 @@
+# Local Cowrie SSH host key — generated once, stored in Secrets Manager
+# Private key must never be committed
+cowrie-host-key-ed25519
+
+# Deployment artifacts (generated at runtime)
+deployment-inputs.json
+
+# Local smoke test artifacts
+discord_spam_evidence.jsonl

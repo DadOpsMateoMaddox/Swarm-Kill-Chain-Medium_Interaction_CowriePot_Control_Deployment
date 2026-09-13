@@ -1,0 +1,447 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  PatriotPot 2026 Behavioral Reconstruction Control.
+  Cowrie v2.5.0 container pulled from ECR; host substrate AL2023.
+  Application runtime pinned to 2025 configuration.
+  Telemetry to S3; management via SSM Session Manager (TCP/22 closed).
+
+Parameters:
+  ContainerImageUri:
+    Type: String
+    Description: Immutable ECR image URI (digest form) for PatriotPot Cowrie control
+
+  HostAmiId:
+    Type: AWS::EC2::Image::Id
+    Description: Pinned Amazon Linux 2023 AMI resolved by orchestrator at deploy time
+
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Break-glass EC2 management key (TCP/22 remains closed; SSM is primary path)
+
+  CowrieHostKeySecret:
+    Type: String
+    Description: ARN of the Secrets Manager secret containing the Cowrie SSH server host key
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type
+
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging, validation]
+    Description: Deployment environment
+
+Resources:
+
+  # ---------------------------------------------------------------------------
+  # IAM
+  # ---------------------------------------------------------------------------
+  PatriotPotInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'patriotpot-instance-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        - PolicyName: PatriotPotS3
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${EvidenceBucket}/*'
+
+        - PolicyName: PatriotPotCloudWatch
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/patriotpot/*'
+
+        - PolicyName: PatriotPotECRPull
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecr:GetAuthorizationToken'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:BatchGetImage'
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/patriotpot-2026-control'
+
+        - PolicyName: PatriotPotCowrieHostKey
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource: !Ref CowrieHostKeySecret
+
+  PatriotPotInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref PatriotPotInstanceRole
+
+  # ---------------------------------------------------------------------------
+  # NETWORK
+  # ---------------------------------------------------------------------------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'patriotpot-vpc-${Environment}'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # ---------------------------------------------------------------------------
+  # SECURITY GROUP  — attacker-facing ports only; TCP/22 intentionally absent
+  # ---------------------------------------------------------------------------
+  PatriotPotSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PatriotPot 2026 honeypot - attacker-facing ports only; no management SSH
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2222
+          ToPort: 2222
+          CidrIp: 0.0.0.0/0
+          Description: Cowrie SSH honeypot
+        - IpProtocol: tcp
+          FromPort: 2223
+          ToPort: 2223
+          CidrIp: 0.0.0.0/0
+          Description: Cowrie Telnet honeypot
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound (ECR pull, SSM, S3, CloudWatch)
+      Tags:
+        - Key: Name
+          Value: !Sub 'patriotpot-sg-${Environment}'
+
+  # ---------------------------------------------------------------------------
+  # S3 EVIDENCE BUCKET
+  # ---------------------------------------------------------------------------
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'patriotpot-evidence-${AWS::AccountId}-${AWS::Region}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            NoncurrentVersionExpirationInDays: 90
+            Status: Enabled
+      Tags:
+        - Key: Purpose
+          Value: PatriotPot evidence collection
+
+  # ---------------------------------------------------------------------------
+  # EC2 INSTANCE (V2 - corrected bootstrap)
+  # ---------------------------------------------------------------------------
+  PatriotPotInstanceV2:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - PatriotPotInstanceProfile
+      - AttachGateway
+    Properties:
+      ImageId: !Ref HostAmiId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPairName
+      IamInstanceProfile: !Ref PatriotPotInstanceProfile
+      SecurityGroupIds:
+        - !Ref PatriotPotSecurityGroup
+      SubnetId: !Ref PublicSubnet
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          exec > /var/log/patriotpot-init.log 2>&1
+
+          # ----------------------------------------------------------------
+          # System prep
+          # ----------------------------------------------------------------
+          dnf update -y
+          dnf install -y docker amazon-cloudwatch-agent
+
+          systemctl enable --now docker
+
+          # ----------------------------------------------------------------
+          # ECR login and pull (immutable digest)
+          # ----------------------------------------------------------------
+          REGION="${AWS::Region}"
+          REGISTRY="${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+          IMAGE_URI="${ContainerImageUri}"
+
+          aws ecr get-login-password --region "$REGION" \
+            | docker login --username AWS --password-stdin "$REGISTRY"
+
+          docker pull "$IMAGE_URI"
+
+          # ----------------------------------------------------------------
+          # Retrieve Cowrie SSH host key from Secrets Manager
+          # Key is written directly to disk; never echoed to stdout/stderr
+          # ----------------------------------------------------------------
+          COWRIE_KEY_DIR=/opt/cowrie-keys
+          mkdir -p "$COWRIE_KEY_DIR"
+          chmod 700 "$COWRIE_KEY_DIR"
+
+          # Write Python decoder script
+          cat >/tmp/write-cowrie-key.py <<'PYEOF'
+          import sys
+          import json
+          import base64
+          import os
+          import stat
+
+          try:
+              data = json.load(sys.stdin)
+          except json.JSONDecodeError as e:
+              sys.stderr.write(f"ERROR: Invalid JSON from Secrets Manager: {e}\n")
+              sys.exit(1)
+
+          if "private_key_b64" not in data:
+              sys.stderr.write("ERROR: 'private_key_b64' field missing in secret\n")
+              sys.exit(1)
+          if "public_key" not in data:
+              sys.stderr.write("ERROR: 'public_key' field missing in secret\n")
+              sys.exit(1)
+
+          try:
+              private_key = base64.b64decode(data["private_key_b64"], validate=True)
+          except Exception as e:
+              sys.stderr.write(f"ERROR: Failed to decode base64 private key: {e}\n")
+              sys.exit(1)
+
+          # Validate OpenSSH private key format
+          if not private_key.startswith(b"-----BEGIN OPENSSH PRIVATE KEY-----"):
+              sys.stderr.write("ERROR: unexpected private-key format\n")
+              sys.exit(1)
+
+          public_key = data["public_key"]
+
+          private_path = "/opt/cowrie-keys/ssh_host_ed25519_key"
+          public_path = private_path + ".pub"
+
+          # Write private key with 0600 permissions
+          fd = os.open(private_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+          with os.fdopen(fd, "wb") as f:
+              f.write(private_key)
+
+          # Write public key with 0644 permissions
+          with open(public_path, "w", encoding="utf-8") as f:
+              f.write(public_key.rstrip() + "\n")
+
+          os.chmod(private_path, 0o600)
+          os.chmod(public_path, 0o644)
+
+          # Verify files exist and are non-empty
+          if not os.path.exists(private_path) or os.path.getsize(private_path) == 0:
+              sys.stderr.write("ERROR: Private key file is empty or missing\n")
+              sys.exit(1)
+          if not os.path.exists(public_path) or os.path.getsize(public_path) == 0:
+              sys.stderr.write("ERROR: Public key file is empty or missing\n")
+              sys.exit(1)
+
+          sys.stderr.write("SUCCESS: Cowrie host key written to /opt/cowrie-keys/\n")
+          PYEOF
+
+          # Pipe secret directly into Python decoder
+          aws secretsmanager get-secret-value \
+            --secret-id "${CowrieHostKeySecret}" \
+            --region "$REGION" \
+            --query SecretString \
+            --output text | \
+          python3 /tmp/write-cowrie-key.py
+
+          # Clean up temporary script
+          rm -f /tmp/write-cowrie-key.py
+
+          # Verify key files exist and have correct permissions
+          if [ ! -f "/opt/cowrie-keys/ssh_host_ed25519_key" ]; then
+              echo "ERROR: Private key file not created"
+              exit 1
+          fi
+          if [ ! -f "/opt/cowrie-keys/ssh_host_ed25519_key.pub" ]; then
+              echo "ERROR: Public key file not created"
+              exit 1
+          fi
+          echo "Cowrie host key verification passed"
+
+          # ----------------------------------------------------------------
+          # Run Cowrie with the stable host key mounted read-only
+          # ----------------------------------------------------------------
+          docker run -d \
+            --name patriotpot \
+            --restart unless-stopped \
+            -p 2222:2222/tcp \
+            -p 2223:2223/tcp \
+            -e AWS_DEFAULT_REGION="$REGION" \
+            -v /var/log/cowrie:/opt/cowrie/var/log/cowrie \
+            -v "$COWRIE_KEY_DIR/ssh_host_ed25519_key":/opt/cowrie/etc/ssh_host_rsa_key:ro \
+            -v "$COWRIE_KEY_DIR/ssh_host_ed25519_key.pub":/opt/cowrie/etc/ssh_host_rsa_key.pub:ro \
+            "$IMAGE_URI"
+
+          # ----------------------------------------------------------------
+          # CloudWatch agent
+          # ----------------------------------------------------------------
+          cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json <<'CFGEOF'
+          {
+            "logs": {
+              "logs_collected": {
+                "files": {
+                  "collect_list": [
+                    {
+                      "file_path": "/var/log/cowrie/cowrie.log",
+                      "log_group_name": "/patriotpot/honeypot",
+                      "log_stream_name": "{instance_id}"
+                    },
+                    {
+                      "file_path": "/var/log/cowrie/cowrie.json",
+                      "log_group_name": "/patriotpot/honeypot-json",
+                      "log_stream_name": "{instance_id}"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+          CFGEOF
+
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+            -a fetch-config -m ec2 \
+            -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json
+
+          echo "PatriotPot 2026 Control bootstrap complete: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      Tags:
+        - Key: Name
+          Value: !Sub 'patriotpot-2026-${Environment}'
+        - Key: Control
+          Value: 'Control-0'
+        - Key: Experiment
+          Value: 'SwarmKillChain'
+
+
+  # ---------------------------------------------------------------------------
+  # ELASTIC IP
+  # ---------------------------------------------------------------------------
+  PatriotPotEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref PatriotPotInstanceV2
+      Tags:
+        - Key: Name
+          Value: !Sub 'patriotpot-eip-${Environment}'
+
+  # ---------------------------------------------------------------------------
+  # CLOUDWATCH LOG GROUP
+  # ---------------------------------------------------------------------------
+  PatriotPotLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /patriotpot/honeypot
+      RetentionInDays: 30
+
+  PatriotPotLogGroupJson:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /patriotpot/honeypot-json
+      RetentionInDays: 30
+
+Outputs:
+  PatriotPotPublicIP:
+    Description: Static Elastic IP for the honeypot
+    Value: !Ref PatriotPotEIP
+    Export:
+      Name: !Sub 'patriotpot-ip-${Environment}'
+
+  PatriotPotSSHEndpoint:
+    Description: SSH honeypot endpoint (Cowrie on port 2222)
+    Value: !Sub '${PatriotPotEIP}:2222'
+
+  PatriotPotTelnetEndpoint:
+    Description: Telnet honeypot endpoint (Cowrie on port 2223)
+    Value: !Sub '${PatriotPotEIP}:2223'
+
+  EvidenceBucketName:
+    Description: S3 bucket for raw evidence archival
+    Value: !Ref EvidenceBucket
+    Export:
+      Name: !Sub 'patriotpot-evidence-bucket-${Environment}'
+
+  InstanceId:
+    Description: EC2 instance ID
+    Value: !Ref PatriotPotInstanceV2
+
+  SSMSessionLink:
+    Description: SSM Session Manager console link
+    Value: !Sub 'https://console.aws.amazon.com/systems-manager/session-manager/${PatriotPotInstanceV2}?region=${AWS::Region}'
