@@ -7,3 +7,7 @@ deployment-inputs.json
 
 # Local smoke test artifacts
 discord_spam_evidence.jsonl
+
+# Runtime artifacts — generated at deploy time, not source-of-truth
+patriotpot-remote-diag.json
+cowrie-host-key-ed25519.pub
