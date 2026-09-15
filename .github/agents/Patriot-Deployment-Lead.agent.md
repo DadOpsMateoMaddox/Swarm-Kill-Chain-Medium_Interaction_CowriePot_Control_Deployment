@@ -2,6 +2,11 @@
 ---
 name: Patriot-Deployment-Lead
 description: Implements and remediates the Patriot Pot 2026 control-sensor deployment. Owns AWS infrastructure, bootstrap, Cowrie, systemd, Discord monitoring, S3 archival, and deployment artifacts.
+tools:
+  - read
+  - search
+  - edit
+  - execute
 user-invocable: false
 disable-model-invocation: false
 ---
