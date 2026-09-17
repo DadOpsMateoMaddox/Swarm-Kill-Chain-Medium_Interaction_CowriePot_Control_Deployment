@@ -1,0 +1,5 @@
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+mysql:x:104:108:MySQL Server:/nonexistent:/bin/false
+admin:x:1000:1000:Admin User:/home/admin:/bin/bash

@@ -1,0 +1,10 @@
+root:x:*:
+admin:x:*:
+user:x:*:
+oracle:x:*:
+mysql:x:*:
+postgres:x:*:
+backup:x:*:
+test:x:*:
+guest:x:*:
+ubuntu:x:*:

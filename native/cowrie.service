@@ -1,0 +1,33 @@
+[Unit]
+Description=PatriotPot Cowrie v2.5.0 native control sensor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cowrie
+Group=cowrie
+WorkingDirectory=/opt/cowrie
+Environment=PATH=/opt/cowrie/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=PYTHONPATH=/opt/cowrie/src
+Environment=PYTHONUNBUFFERED=1
+Environment=TZ=UTC
+ExecStartPre=/usr/bin/touch /opt/cowrie/var/log/cowrie/cowrie.log /opt/cowrie/var/log/cowrie/cowrie.json
+ExecStartPre=/usr/bin/chmod 0640 /opt/cowrie/var/log/cowrie/cowrie.log /opt/cowrie/var/log/cowrie/cowrie.json
+ExecStart=/opt/cowrie/venv/bin/twistd -n --pidfile= --umask=0027 cowrie
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0027
+LimitNOFILE=8192
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadOnlyDirectories=/opt/cowrie
+ReadWriteDirectories=/opt/cowrie/var
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

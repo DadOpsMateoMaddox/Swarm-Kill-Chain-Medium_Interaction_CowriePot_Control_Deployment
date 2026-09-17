@@ -1,0 +1,17 @@
+[Unit]
+Description=PatriotPot stateful outbound control firewall
+Wants=network-online.target
+After=network-online.target
+Before=amazon-ssm-agent.service cowrie.service patriotpot-discord.service patriotpot-archive.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/patriotpot-egress-firewall
+RemainAfterExit=yes
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

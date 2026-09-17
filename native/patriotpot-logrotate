@@ -1,0 +1,32 @@
+/var/log/patriotpot/discord.log {
+    weekly
+    rotate 30
+    missingok
+    notifempty
+    compress
+    delaycompress
+    su patriot-discord patriot-discord
+    create 0600 patriot-discord patriot-discord
+}
+
+/var/log/patriotpot/archive.log {
+    weekly
+    rotate 30
+    missingok
+    notifempty
+    compress
+    delaycompress
+    su patriot-archive patriot-archive
+    create 0600 patriot-archive patriot-archive
+}
+
+/var/log/patriotpot/patriotpot-init.log {
+    weekly
+    rotate 30
+    missingok
+    notifempty
+    compress
+    delaycompress
+    su root root
+    create 0600 root root
+}

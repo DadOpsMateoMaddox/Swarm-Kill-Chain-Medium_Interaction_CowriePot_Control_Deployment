@@ -1,0 +1,67 @@
+{
+  "agent": {
+    "metrics_collection_interval": 60,
+    "run_as_user": "root"
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/opt/cowrie/var/log/cowrie/cowrie.log",
+            "log_group_name": "/patriotpot/honeypot",
+            "log_stream_name": "{instance_id}",
+            "timezone": "UTC"
+          },
+          {
+            "file_path": "/opt/cowrie/var/log/cowrie/cowrie.json",
+            "log_group_name": "/patriotpot/honeypot-json",
+            "log_stream_name": "{instance_id}",
+            "timezone": "UTC"
+          },
+          {
+            "file_path": "/var/log/patriotpot/archive.log",
+            "log_group_name": "/patriotpot/operations",
+            "log_stream_name": "{instance_id}/archive",
+            "timezone": "UTC"
+          },
+          {
+            "file_path": "/var/log/patriotpot/discord.log",
+            "log_group_name": "/patriotpot/operations",
+            "log_stream_name": "{instance_id}/discord",
+            "timezone": "UTC"
+          },
+          {
+            "file_path": "/var/log/patriotpot/patriotpot-init.log",
+            "log_group_name": "/patriotpot/operations",
+            "log_stream_name": "{instance_id}/bootstrap",
+            "timezone": "UTC"
+          }
+        ]
+      }
+    }
+  },
+  "metrics": {
+    "namespace": "PatriotPot/Control",
+    "append_dimensions": {
+      "InstanceId": "${aws:InstanceId}"
+    },
+    "metrics_collected": {
+      "disk": {
+        "measurement": [
+          "used_percent"
+        ],
+        "metrics_collection_interval": 60,
+        "resources": [
+          "/"
+        ]
+      },
+      "mem": {
+        "measurement": [
+          "mem_used_percent"
+        ],
+        "metrics_collection_interval": 60
+      }
+    }
+  }
+}

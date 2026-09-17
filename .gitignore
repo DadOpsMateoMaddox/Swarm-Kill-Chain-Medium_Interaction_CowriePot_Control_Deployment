@@ -1,4 +1,4 @@
-# Local Cowrie SSH host key — generated once, stored in Secrets Manager
+# Local Cowrie SSH host key — rotation material stored in Secrets Manager
 # Private key must never be committed
 cowrie-host-key-ed25519
 
@@ -11,3 +11,7 @@ discord_spam_evidence.jsonl
 # Runtime artifacts — generated at deploy time, not source-of-truth
 patriotpot-remote-diag.json
 cowrie-host-key-ed25519.pub
+
+# Local validation caches
+__pycache__/
+.mypy_cache/

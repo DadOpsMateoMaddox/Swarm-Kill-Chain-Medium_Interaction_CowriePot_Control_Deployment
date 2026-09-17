@@ -1,825 +1,581 @@
 # Invoke-PatriotPot.ps1
 #
-# Idempotent build/deploy orchestrator for PatriotPot 2026 Control-0.
-#
-# Prerequisites:
-#   AWS CLI v2, Docker Desktop, credentials configured for $Profile
-#
-# Usage:
-#   aws sso login --profile patriotpot
-#   .\Invoke-PatriotPot.ps1
+# Prepares, reviews, and optionally executes the PatriotPot 2026 native
+# Amazon Linux 2 control replacement. There is no container build or registry.
 
+[CmdletBinding()]
 param(
-    [string]$Profile       = "patriotpot",
-    [string]$Region        = "us-east-1",
-    [string]$StackName     = "patriotpot-2026-control-prod",
-    [string]$Environment   = "production",
-    [string]$EcrRepo       = "patriotpot-2026-control",
-    [string]$ProjectRoot   = "C:\DadOpsMateoMaddox\PatriotPot\2026-control",
-    [switch]$PreflightOnly
+    [string]$Profile = "patriotpot",
+    [string]$Region = "us-east-1",
+    [string]$StackName = "patriotpot-2026-control-prod",
+    [string]$Environment = "production",
+    [string]$ProjectRoot = "C:\DadOpsMateoMaddox\PatriotPot\2026-control",
+    [string]$DiscordWebhookParameterName = "/patriotpot/2026-control/discord-webhook",
+    [switch]$PreflightOnly,
+    [switch]$FirewallOnly,
+    [switch]$ExecuteChangeSet
 )
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
-$Template      = Join-Path $ProjectRoot "gmu-honeypot-stack-2026-control.yaml"
-$KeyName       = "patriotpot-2026-admin"
-$SshDir        = Join-Path $env:USERPROFILE ".ssh"
-$KeyPath       = Join-Path $SshDir $KeyName
-$PubPath       = "$KeyPath.pub"
-$SecretName    = "patriotpot/2026-control/cowrie-host-key"
-$CowrieKeyPath = Join-Path $ProjectRoot "cowrie-host-key-ed25519"
-$CowriePubPath = "$CowrieKeyPath.pub"
+if ($Profile -ne "patriotpot" -or $Region -ne "us-east-1") {
+    throw "Mission boundary violation: profile must be patriotpot and region must be us-east-1."
+}
 
-function Section([string]$msg) {
+$Template = Join-Path $ProjectRoot "gmu-honeypot-stack-2026-control.yaml"
+$NativeRoot = Join-Path $ProjectRoot "native"
+$SecretName = "patriotpot/2026-control/cowrie-host-key"
+$EvidenceBucket = $null
+
+function Section([string]$Message) {
     Write-Host ""
     Write-Host "============================================================"
-    Write-Host $msg
+    Write-Host $Message
     Write-Host "============================================================"
 }
 
-# Every aws call gets --profile and --region automatically.
-# For pipeline use (get-login-password | docker login) call aws directly.
 function Invoke-Aws {
-    aws @args --profile $Profile --region $Region
+    $output = aws @args --profile patriotpot --region us-east-1
     if ($LASTEXITCODE -ne 0) {
-        throw "aws $($args[0]) $($args[1]) failed (exit $LASTEXITCODE)"
+        throw "AWS CLI operation failed: aws $($args[0]) $($args[1])"
+    }
+    return $output
+}
+
+function Get-Sha256([string]$Path) {
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Get-AssetMap {
+    return [ordered]@{
+        "archive-requirements.lock"         = Join-Path $NativeRoot "archive-requirements.lock"
+        "cowrie-requirements.lock"          = Join-Path $NativeRoot "cowrie-requirements.lock"
+        "discord-monitor.py"                = Join-Path $NativeRoot "discord-monitor.py"
+        "s3-archive.py"                     = Join-Path $NativeRoot "s3-archive.py"
+        "install-host-key.py"               = Join-Path $NativeRoot "install-host-key.py"
+        "cowrie.service"                    = Join-Path $NativeRoot "cowrie.service"
+        "patriotpot-discord.service"        = Join-Path $NativeRoot "patriotpot-discord.service"
+        "patriotpot-egress-firewall.service" = Join-Path $NativeRoot "patriotpot-egress-firewall.service"
+        "patriotpot-archive.service"        = Join-Path $NativeRoot "patriotpot-archive.service"
+        "patriotpot-archive.timer"          = Join-Path $NativeRoot "patriotpot-archive.timer"
+        "cloudwatch-agent.json"             = Join-Path $NativeRoot "cloudwatch-agent.json"
+        "patriotpot-logrotate"              = Join-Path $NativeRoot "patriotpot-logrotate"
+        "cowrie.cfg"                        = Join-Path $ProjectRoot "cowrie.cfg"
+        "userdb.txt"                        = Join-Path $ProjectRoot "userdb.txt"
+        "honeyfs-etc-passwd"                = Join-Path $ProjectRoot "honeyfs-etc-passwd"
+        "honeyfs-home-admin-passwords.txt"  = Join-Path $ProjectRoot "honeyfs-home-admin-passwords.txt"
+        "txtcmds-bin-netstat"               = Join-Path $ProjectRoot "txtcmds-bin-netstat"
+        "txtcmds-bin-ps"                    = Join-Path $ProjectRoot "txtcmds-bin-ps"
+        "patriotpot-egress-firewall.sh"     = Join-Path $NativeRoot "patriotpot-egress-firewall.sh"
+    }
+}
+
+function Get-FirewallAssetMap {
+    return [ordered]@{
+        "patriotpot-egress-firewall.sh" = Join-Path $NativeRoot "patriotpot-egress-firewall.sh"
+        "patriotpot-egress-firewall.service" = Join-Path $NativeRoot "patriotpot-egress-firewall.service"
+    }
+}
+
+function Assert-AssetIntegrity {
+    $assets = Get-AssetMap
+    $missing = @($assets.GetEnumerator() | Where-Object { -not (Test-Path -LiteralPath $_.Value) })
+    if ($missing.Count -gt 0) {
+        throw "Missing deployment assets: $($missing.Name -join ', ')"
+    }
+
+    $secretPatterns = @(
+        "-----BEGIN (?:OPENSSH |RSA |EC )?PRIVATE KEY-----\s*\r?\n[A-Za-z0-9+/]{40}",
+        "https://(?:discord(?:app)?\.com)/api/webhooks/",
+        "\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"
+    )
+    foreach ($asset in $assets.GetEnumerator()) {
+        $content = Get-Content -LiteralPath $asset.Value -Raw
+        foreach ($pattern in $secretPatterns) {
+            if ($content -match $pattern) {
+                throw "Secret-pattern preflight failed for deployment asset $($asset.Name)."
+            }
+        }
+    }
+
+    $bootstrap = Join-Path $NativeRoot "bootstrap-native.sh"
+    $bootstrapContent = Get-Content -LiteralPath $bootstrap -Raw
+    foreach ($asset in $assets.GetEnumerator()) {
+        $expected = Get-Sha256 $asset.Value
+        $escapedName = [regex]::Escape($asset.Name)
+        if ($bootstrapContent -notmatch "(?m)^$expected  $escapedName`r?$") {
+            throw "Bootstrap hash pin is stale or absent for $($asset.Name)."
+        }
+    }
+
+    $templateContent = Get-Content -LiteralPath $Template -Raw
+    foreach ($forbidden in @(
+        "AWS::EC2::SecurityGroupIngress",
+        "ContainerImageUri",
+        "docker run",
+        "containerd",
+        "podman",
+        "ecs:"
+    )) {
+        if ($templateContent -match [regex]::Escape($forbidden)) {
+            throw "Forbidden deployment declaration found in template: $forbidden"
+        }
+    }
+    if ($templateContent -match "(?m)^\s*(FromPort|ToPort):\s*(22|2222|2223)\s*$") {
+        throw "Prohibited inbound port declaration found in template."
+    }
+}
+
+function Resolve-OfficialAl2Ami {
+    $parameterName = "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+    $parameter = Invoke-Aws ssm get-parameter `
+        --name $parameterName `
+        --output json | ConvertFrom-Json
+    $amiId = $parameter.Parameter.Value
+    if ($amiId -notmatch "^ami-[0-9a-f]+$") {
+        throw "Official AL2 public parameter did not return an AMI ID."
+    }
+    $image = Invoke-Aws ec2 describe-images `
+        --image-ids $amiId `
+        --owners 137112412989 `
+        --output json | ConvertFrom-Json
+    if ($image.Images.Count -ne 1) {
+        throw "DEPLOYMENT_PREFLIGHT_AL2_LOOKUP: expected exactly one official Amazon Linux 2 image."
+    }
+    $candidate = $image.Images[0]
+    $valid = (
+        $candidate.OwnerId -eq "137112412989" -and
+        $candidate.ImageOwnerAlias -eq "amazon" -and
+        $candidate.Architecture -eq "x86_64" -and
+        $candidate.VirtualizationType -eq "hvm" -and
+        $candidate.RootDeviceType -eq "ebs" -and
+        $candidate.State -eq "available" -and
+        $candidate.Name -match "^amzn2-ami-hvm-"
+    )
+    if (-not $valid) {
+        throw "DEPLOYMENT_PREFLIGHT_AL2_METADATA: resolved image failed required owner/platform metadata checks."
+    }
+    return $candidate
+}
+
+function Get-HostKeyMetadata {
+    $description = Invoke-Aws secretsmanager describe-secret `
+        --secret-id $SecretName `
+        --output json | ConvertFrom-Json
+    $versions = Invoke-Aws secretsmanager list-secret-version-ids `
+        --secret-id $SecretName `
+        --include-deprecated `
+        --output json | ConvertFrom-Json
+    $current = @($versions.Versions | Where-Object { $_.VersionStages -contains "AWSCURRENT" })
+    if ($current.Count -ne 1) {
+        throw "Cowrie host-key secret does not have exactly one AWSCURRENT version."
+    }
+
+    # Deployment reconciliation uses metadata only. Secret material is never
+    # retrieved by the workstation orchestrator.
+    return [pscustomobject]@{
+        Arn = $description.ARN
+        VersionId = $current[0].VersionId
+        CreatedDate = $current[0].CreatedDate
+        VersionCount = $versions.Versions.Count
+    }
+}
+
+function Publish-Asset([string]$Bucket, [string]$Key, [string]$Path, [string]$Hash) {
+    $putOutput = aws s3api put-object `
+        --bucket $Bucket `
+        --key $Key `
+        --body $Path `
+        --metadata "sha256=$Hash" `
+        --server-side-encryption AES256 `
+        --if-none-match "*" `
+        --output json `
+        --profile patriotpot `
+        --region us-east-1 2>&1
+    $putExit = $LASTEXITCODE
+    if ($putExit -ne 0) {
+        $putError = ($putOutput | Out-String)
+        if ($putError -notmatch "(?i)(PreconditionFailed|\b412\b)") {
+            throw "Atomic S3 bundle create failed for $Key."
+        }
+    }
+    $verified = Invoke-Aws s3api head-object `
+        --bucket $Bucket `
+        --key $Key `
+        --output json | ConvertFrom-Json
+    if ($verified.Metadata.sha256 -ne $Hash) {
+        throw "Content-address collision or S3 verification failure for $Key"
+    }
+}
+
+function Publish-BootstrapBundle([string]$Bucket) {
+    $bootstrap = Join-Path $NativeRoot "bootstrap-native.sh"
+    $bootstrapHash = Get-Sha256 $bootstrap
+    $bundleId = $bootstrapHash
+    $prefix = "bootstrap/$bundleId"
+    Publish-Asset $Bucket "$prefix/bootstrap-native.sh" $bootstrap $bootstrapHash
+    foreach ($asset in (Get-AssetMap).GetEnumerator()) {
+        $hash = Get-Sha256 $asset.Value
+        Publish-Asset $Bucket "$prefix/$($asset.Name)" $asset.Value $hash
+    }
+    return [pscustomobject]@{
+        BundleId = $bundleId
+        BootstrapSha256 = $bootstrapHash
+        Prefix = $prefix
+        AssetCount = (Get-AssetMap).Count + 1
+    }
+}
+
+function New-ReviewedChangeSet(
+    [string]$AmiId,
+    [object]$HostKey,
+    [object]$Bundle,
+    [bool]$RequireInstanceReplacement
+) {
+    $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+    $name = "native-al2-remediation-$timestamp"
+    $firewallAssets = Get-FirewallAssetMap
+    $parameters = @(
+        "ParameterKey=HostAmiId,ParameterValue=$AmiId",
+        "ParameterKey=BootstrapBundleId,ParameterValue=$($Bundle.BundleId)",
+        "ParameterKey=BootstrapScriptSha256,ParameterValue=$($Bundle.BootstrapSha256)",
+        "ParameterKey=FirewallBundleId,ParameterValue=$($Bundle.BundleId)",
+        "ParameterKey=FirewallScriptSha256,ParameterValue=$(Get-Sha256 $firewallAssets['patriotpot-egress-firewall.sh'])",
+        "ParameterKey=FirewallUnitSha256,ParameterValue=$(Get-Sha256 $firewallAssets['patriotpot-egress-firewall.service'])",
+        "ParameterKey=DiscordMonitorSha256,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'discord-monitor.py'))",
+        "ParameterKey=CowrieHostKeySecret,ParameterValue=$($HostKey.Arn)",
+        "ParameterKey=CowrieHostKeyVersionId,ParameterValue=$($HostKey.VersionId)",
+        "ParameterKey=DiscordWebhookParameterName,ParameterValue=$DiscordWebhookParameterName",
+        "ParameterKey=InstanceType,UsePreviousValue=true",
+        "ParameterKey=Environment,UsePreviousValue=true"
+    )
+    $response = Invoke-Aws cloudformation create-change-set `
+        --stack-name $StackName `
+        --change-set-name $name `
+        --change-set-type UPDATE `
+        --description "patriotpot-2026-control-pre-exposure-20260915 native AL2 remediation" `
+        --template-body "file://$Template" `
+        --parameters $parameters `
+        --capabilities CAPABILITY_NAMED_IAM `
+        --include-nested-stacks `
+        --output json | ConvertFrom-Json
+
+    Invoke-Aws cloudformation wait change-set-create-complete `
+        --stack-name $StackName `
+        --change-set-name $response.Id
+    $review = Invoke-Aws cloudformation describe-change-set `
+        --stack-name $StackName `
+        --change-set-name $response.Id `
+        --include-property-values `
+        --output json | ConvertFrom-Json
+
+    $replacementChanges = @(
+        $review.Changes |
+            Where-Object {
+                $_.ResourceChange.PSObject.Properties.Name -contains "Replacement" -and
+                $_.ResourceChange.Replacement -in @("True", "Conditional")
+            }
+    )
+    if ($RequireInstanceReplacement) {
+        $unexpectedReplacement = @(
+            $replacementChanges |
+                Where-Object { $_.ResourceChange.LogicalResourceId -ne "PatriotPotInstanceV2" }
+        )
+    } else {
+        $unexpectedReplacement = @(
+            $replacementChanges |
+                Where-Object {
+                    $_.ResourceChange.LogicalResourceId -ne "PatriotPotInstanceV2" -or
+                    $_.ResourceChange.Replacement -eq "True"
+                }
+        )
+    }
+    if ($unexpectedReplacement.Count -gt 0) {
+        throw "Change set contains an unexpected replacement: $($unexpectedReplacement.ResourceChange.LogicalResourceId -join ', ')"
+    }
+    $instanceReplacement = @(
+        $review.Changes |
+            Where-Object {
+                $_.ResourceChange.LogicalResourceId -eq "PatriotPotInstanceV2" -and
+                $_.ResourceChange.Replacement -eq "True"
+            }
+    )
+    if ($RequireInstanceReplacement -and $instanceReplacement.Count -ne 1) {
+        throw "Change set does not contain the required EC2 instance replacement."
+    }
+    if (-not $RequireInstanceReplacement -and $instanceReplacement.Count -ne 0) {
+        throw "Change set unexpectedly replaces an instance already on the pinned AMI."
+    }
+    $eipReplacement = @(
+        $review.Changes |
+            Where-Object {
+                $_.ResourceChange.LogicalResourceId -eq "PatriotPotEIP" -and
+                $_.ResourceChange.PSObject.Properties.Name -contains "Replacement" -and
+                $_.ResourceChange.Replacement -in @("True", "Conditional")
+            }
+    )
+    if ($eipReplacement.Count -gt 0) {
+        throw "Change set would replace the preserved Elastic IP."
+    }
+    return [pscustomobject]@{
+        Id = $response.Id
+        Name = $name
+        Review = $review
+    }
+}
+
+function New-FirewallOnlyChangeSet([object]$Bundle) {
+    $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+    $name = "egress-firewall-$timestamp"
+    $firewallAssets = Get-FirewallAssetMap
+    $parameters = @(
+        "ParameterKey=HostAmiId,UsePreviousValue=true",
+        "ParameterKey=BootstrapBundleId,UsePreviousValue=true",
+        "ParameterKey=BootstrapScriptSha256,UsePreviousValue=true",
+        "ParameterKey=FirewallBundleId,ParameterValue=$($Bundle.BundleId)",
+        "ParameterKey=FirewallScriptSha256,ParameterValue=$(Get-Sha256 $firewallAssets['patriotpot-egress-firewall.sh'])",
+        "ParameterKey=FirewallUnitSha256,ParameterValue=$(Get-Sha256 $firewallAssets['patriotpot-egress-firewall.service'])",
+        "ParameterKey=DiscordMonitorSha256,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'discord-monitor.py'))",
+        "ParameterKey=CowrieHostKeySecret,UsePreviousValue=true",
+        "ParameterKey=CowrieHostKeyVersionId,UsePreviousValue=true",
+        "ParameterKey=DiscordWebhookParameterName,UsePreviousValue=true",
+        "ParameterKey=InstanceType,UsePreviousValue=true",
+        "ParameterKey=Environment,UsePreviousValue=true"
+    )
+    $response = Invoke-Aws cloudformation create-change-set `
+        --stack-name $StackName `
+        --change-set-name $name `
+        --change-set-type UPDATE `
+        --description "patriotpot-2026-control-pre-exposure-20260915 minimal egress firewall" `
+        --template-body "file://$Template" `
+        --parameters $parameters `
+        --capabilities CAPABILITY_NAMED_IAM `
+        --include-nested-stacks `
+        --output json | ConvertFrom-Json
+
+    Invoke-Aws cloudformation wait change-set-create-complete `
+        --stack-name $StackName `
+        --change-set-name $response.Id
+    $review = Invoke-Aws cloudformation describe-change-set `
+        --stack-name $StackName `
+        --change-set-name $response.Id `
+        --include-property-values `
+        --output json | ConvertFrom-Json
+    $replacements = @(
+        $review.Changes |
+            Where-Object {
+                $_.ResourceChange.PSObject.Properties.Name -contains "Replacement" -and
+                $_.ResourceChange.Replacement -in @("True", "Conditional")
+            }
+    )
+    if ($replacements.Count -gt 0) {
+        throw "Firewall-only change set contains forbidden replacement: $($replacements.ResourceChange.LogicalResourceId -join ', ')"
+    }
+    $forbiddenChanges = @(
+        $review.Changes |
+            Where-Object {
+                $_.ResourceChange.LogicalResourceId -in @("PatriotPotInstanceV2", "PatriotPotEIP")
+            }
+    )
+    if ($forbiddenChanges.Count -gt 0) {
+        throw "Firewall-only change set changes protected resource(s): $($forbiddenChanges.ResourceChange.LogicalResourceId -join ', ')"
+    }
+    $actual = @($review.Changes.ResourceChange.LogicalResourceId)
+    foreach ($required in @(
+        "PatriotPotDiscordMonitorAssociation",
+        "PatriotPotInstanceRole"
+    )) {
+        if ($actual -notcontains $required) {
+            throw "Firewall-only change set lacks required resource update: $required"
+        }
+    }
+    return [pscustomobject]@{
+        Id = $response.Id
+        Name = $name
+        Review = $review
     }
 }
 
 Set-Location $ProjectRoot
 
-# ---------------------------------------------------------------------------
-# PREFLIGHT
-# Putting into PATH
-$AwsCliPath = "$env:LOCALAPPDATA\Programs\Amazon\AWSCLIV2"
-
-if (Test-Path (Join-Path $AwsCliPath "aws.exe")) {
-    if (-not (($env:Path -split ';') -contains $AwsCliPath)) {
-        $env:Path = "$AwsCliPath;$env:Path"
-    }
+Section "PREFLIGHT"
+if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
+    throw "AWS CLI not found."
 }
-function Invoke-Preflight {
-    $results = [System.Collections.Generic.List[object]]::new()
-
-    function PF([string]$label, [string]$status, [string]$detail) {
-        $results.Add([pscustomobject]@{ Label = $label; Status = $status; Detail = $detail })
-    }
-
-    # 1. AWS CLI installed
-    $awsVer = aws --version 2>&1
-    if ($LASTEXITCODE -eq 0 -and $awsVer -match 'aws-cli') {
-        PF "AWS CLI installed" "PASS" ($awsVer -split "`n" | Select-Object -First 1)
-    } else {
-        PF "AWS CLI installed" "FAIL" "aws not found or not executable"
-    }
-
-    # 2. Docker daemon reachable
-    $dockerInfo = docker info 2>&1
-    $dockerExit = $LASTEXITCODE
-    if ($dockerExit -eq 0) {
-        $serverVer = ($dockerInfo | Select-String 'Server Version') -replace '.*Server Version:\s*',''
-        PF "Docker daemon reachable" "PASS" "Server Version: $serverVer"
-    } else {
-        # docker info writes to stderr when daemon is down; capture both streams
-        $errLine = ($dockerInfo | Select-String 'error|cannot|connect' -CaseSensitive:$false | Select-Object -First 1) -replace '^.*?:\s*',''
-        PF "Docker daemon reachable" "FAIL" "docker info failed: $errLine"
-    }
-
-    # 3. AWS profile exists in config
-    $profiles = aws configure list-profiles 2>$null
-    if ($profiles -contains $Profile) {
-        PF "AWS profile exists" "PASS" $Profile
-    } else {
-        PF "AWS profile exists" "WARN" "Profile '$Profile' not found in aws configure list-profiles"
-    }
-
-    # 4. sts get-caller-identity succeeds
-    try {
-        $id = aws sts get-caller-identity --profile $Profile --region $Region --output json 2>$null | ConvertFrom-Json
-        if ($id.Account) {
-            PF "sts get-caller-identity" "PASS" "Account=$($id.Account) ARN=$($id.Arn)"
-        } else {
-            PF "sts get-caller-identity" "FAIL" "Returned no Account field"
-        }
-    } catch {
-        PF "sts get-caller-identity" "FAIL" "$_"
-    }
-
-    # 5. Region reachable (ec2 describe-availability-zones is a lightweight regional call)
-    try {
-        $azOut = aws ec2 describe-availability-zones `
-            --profile $Profile --region $Region `
-            --query 'AvailabilityZones[0].RegionName' --output text 2>$null
-        if ($azOut -eq $Region) {
-            PF "Region reachable" "PASS" $Region
-        } else {
-            PF "Region reachable" "WARN" "Expected $Region, got: $azOut"
-        }
-    } catch {
-        PF "Region reachable" "FAIL" "$_"
-    }
-
-    # 6. Effective permissions - test each required action with a dry simulate
-    #    Uses iam simulate-principal-policy where the caller ARN is known.
-    #    Falls back to WARN if simulate is itself denied.
-    $callerArn = $null
-    try { $callerArn = (aws sts get-caller-identity --profile $Profile --region $Region --output json 2>$null | ConvertFrom-Json).Arn } catch {}
-
-    $requiredActions = @(
-        'ecr:GetAuthorizationToken',
-        'ecr:CreateRepository',
-        'ecr:DescribeRepositories',
-        'ecr:BatchGetImage',
-        'secretsmanager:CreateSecret',
-        'secretsmanager:DescribeSecret',
-        'secretsmanager:GetSecretValue',
-        'ec2:ImportKeyPair',
-        'ec2:DescribeKeyPairs',
-        'ssm:GetParameter',
-        'cloudformation:ValidateTemplate',
-        'cloudformation:CreateStack',
-        'cloudformation:UpdateStack',
-        'cloudformation:DescribeStacks',
-        'iam:CreateRole',
-        'iam:AttachRolePolicy',
-        'iam:PassRole'
-    )
-
-    if ($callerArn) {
-        try {
-            $simResult = aws iam simulate-principal-policy `
-                --policy-source-arn $callerArn `
-                --action-names @requiredActions `
-                --profile $Profile --region $Region `
-                --output json 2>$null | ConvertFrom-Json
-
-            $denied = $simResult.EvaluationResults | Where-Object { $_.EvalDecision -ne 'allowed' }
-            if ($denied.Count -eq 0) {
-                PF "IAM permissions simulated" "PASS" "All $($requiredActions.Count) actions allowed"
-            } else {
-                $deniedNames = ($denied | Select-Object -ExpandProperty EvalActionName) -join ', '
-                PF "IAM permissions simulated" "WARN" "Denied or implicit-deny: $deniedNames"
-            }
-        } catch {
-            PF "IAM permissions simulated" "WARN" "iam:SimulatePrincipalPolicy not available or denied; skipping"
-        }
-    } else {
-        PF "IAM permissions simulated" "WARN" "Could not determine caller ARN; skipping simulation"
-    }
-
-    # 7. Dockerfile exists
-    $df = Join-Path $ProjectRoot "Dockerfile"
-    if (Test-Path $df) {
-        PF "Dockerfile exists" "PASS" $df
-    } else {
-        PF "Dockerfile exists" "FAIL" "Not found: $df"
-    }
-
-    # 8. cowrie.cfg exists
-    $cfg = Join-Path $ProjectRoot "cowrie.cfg"
-    if (Test-Path $cfg) {
-        $backend = Select-String -Path $cfg -Pattern 'backend\s*=\s*shell' -Quiet
-        $detail  = if ($backend) { "backend=shell confirmed" } else { "WARNING: backend=shell not found in cowrie.cfg" }
-        $status  = if ($backend) { "PASS" } else { "WARN" }
-        PF "cowrie.cfg exists" $status "$cfg - $detail"
-    } else {
-        PF "cowrie.cfg exists" "FAIL" "Not found: $cfg"
-    }
-
-    # 9. userdb.txt exists
-    $udb = Join-Path $ProjectRoot "userdb.txt"
-    if (Test-Path $udb) {
-        PF "userdb.txt exists" "PASS" $udb
-    } else {
-        PF "userdb.txt exists" "FAIL" "Not found: $udb"
-    }
-
-    # 10. CloudFormation template parses (validate-template is read-only)
-    try {
-        aws cloudformation validate-template `
-            --template-body "file://$Template" `
-            --profile $Profile --region $Region *> $null
-        if ($LASTEXITCODE -eq 0) {
-            PF "CloudFormation template parses" "PASS" $Template
-        } else {
-            PF "CloudFormation template parses" "FAIL" "validate-template returned non-zero"
-        }
-    } catch {
-        PF "CloudFormation template parses" "FAIL" "$_"
-    }
-
-    # 11. Required template parameters exist
-    #     Use CloudFormation's own parser via validate-template, not regex.
-    $required = @('ContainerImageUri','HostAmiId','KeyPairName','CowrieHostKeySecret','Environment')
-    if (Test-Path $Template) {
-        try {
-            $cfnParams = aws cloudformation validate-template `
-                --template-body "file://$Template" `
-                --query 'Parameters[].ParameterKey' `
-                --output text `
-                --profile $Profile --region $Region 2>$null
-            $cfnParamList = $cfnParams -split '\s+' | Where-Object { $_ -ne '' }
-            $missing = $required | Where-Object { $cfnParamList -notcontains $_ }
-            if ($missing.Count -eq 0) {
-                PF "Template parameters present" "PASS" ($required -join ', ')
-            } else {
-                PF "Template parameters present" "FAIL" "Missing from CFN parsed output: $($missing -join ', ')"
-            }
-        } catch {
-            PF "Template parameters present" "FAIL" "validate-template failed: $_"
-        }
-    } else {
-        PF "Template parameters present" "FAIL" "Template not found, cannot check"
-    }
-
-    # 12. No TCP/22 ingress in template
-    if (Test-Path $Template) {
-        $yaml = Get-Content $Template -Raw
-        if ($yaml -match 'FromPort:\s*22[^2]|FromPort:\s*22$|ToPort:\s*22[^2]|ToPort:\s*22$') {
-            PF "No TCP/22 ingress rule" "FAIL" "TCP/22 ingress found in SecurityGroup"
-        } else {
-            PF "No TCP/22 ingress rule" "PASS" "TCP/22 absent from SecurityGroupIngress"
-        }
-    } else {
-        PF "No TCP/22 ingress rule" "FAIL" "Template not found, cannot check"
-    }
-
-    # 13. ContainerImageUri enforces sha256 digest
-    #     Check that the orchestrator validates the digest starts with sha256:
-    $ps1Content = Get-Content (Join-Path $ProjectRoot "Invoke-PatriotPot.ps1") -Raw
-    if ($ps1Content -match 'sha256:' -and $ps1Content -match 'ImmutableImageUri.*@') {
-        PF "ContainerImageUri uses sha256 digest" "PASS" "Digest validation and immutable URI present in orchestrator"
-    } else {
-        PF "ContainerImageUri uses sha256 digest" "FAIL" "Digest enforcement missing from orchestrator"
-    }
-
-    # 14. Cowrie host-key not printed
-    #     Use PowerShell AST to inspect only executable command invocations.
-    #     Triggers only when a print command's argument list directly references
-    #     a sensitive variable. Ignores comments, assignments, and string literals.
-    $printCommands = @('Write-Host','Write-Output','Write-Verbose','Write-Debug','echo')
-    $sensitiveVars = @('privB64','secretValue','privBytes')
-    $ps1Path       = Join-Path $ProjectRoot "Invoke-PatriotPot.ps1"
-    try {
-        $astTokens = $null; $astErrors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile(
-            $ps1Path, [ref]$astTokens, [ref]$astErrors)
-
-        # Collect all CommandAst nodes whose command name is a print command
-        $printAsts = $ast.FindAll({
-            param($node)
-            $node -is [System.Management.Automation.Language.CommandAst] -and
-            $printCommands -contains $node.GetCommandName()
-        }, $true)
-
-        $leaks = @()
-        foreach ($cmd in $printAsts) {
-            # Walk every argument element of the command
-            foreach ($el in $cmd.CommandElements | Select-Object -Skip 1) {
-                # Look for VariableExpressionAst whose name is a sensitive variable
-                $varRefs = $el.FindAll({
-                    param($n)
-                    $n -is [System.Management.Automation.Language.VariableExpressionAst] -and
-                    $sensitiveVars -contains $n.VariablePath.UserPath
-                }, $true)
-                foreach ($v in $varRefs) {
-                    $leaks += "$($cmd.GetCommandName()) references `$$($v.VariablePath.UserPath) at line $($v.Extent.StartLineNumber)"
-                }
-            }
-        }
-
-        if ($leaks.Count -eq 0) {
-            PF "Cowrie host-key not printed" "PASS" "AST scan: no sensitive variable in print command arguments"
-        } else {
-            PF "Cowrie host-key not printed" "FAIL" ($leaks -join '; ')
-        }
-    } catch {
-        PF "Cowrie host-key not printed" "WARN" "AST parse failed: $_"
-    }
-
-    # 15. Expected local SSH key path is writable
-    New-Item -ItemType Directory -Force -Path $SshDir | Out-Null
-    $testFile = Join-Path $SshDir ".pp-preflight-writetest"
-    try {
-        [System.IO.File]::WriteAllText($testFile, "x")
-        Remove-Item $testFile -Force
-        PF "SSH key dir writable" "PASS" $SshDir
-    } catch {
-        PF "SSH key dir writable" "FAIL" "Cannot write to $SshDir : $_"
-    }
-
-    # 16. Behavioral validator imports successfully
-    $validator = Join-Path $ProjectRoot "validate-behavioral-equivalence.py"
-    if (Test-Path $validator) {
-        $pyCheck = python -c "import ast, sys; ast.parse(open(sys.argv[1]).read()); print('ok')" $validator 2>&1
-        if ($pyCheck -match 'ok') {
-            PF "Behavioral validator parses" "PASS" $validator
-        } else {
-            PF "Behavioral validator parses" "FAIL" "Python parse error: $pyCheck"
-        }
-    } else {
-        PF "Behavioral validator parses" "WARN" "Not found: $validator"
-    }
-
-    # ---------------------------------------------------------------------------
-    # Print results
-    # ---------------------------------------------------------------------------
-    Write-Host ""
-    Write-Host "============================================================"
-    Write-Host "PREFLIGHT RESULTS"
-    Write-Host "============================================================"
-
-    $passCount = 0; $warnCount = 0; $failCount = 0
-    foreach ($r in $results) {
-        $color = switch ($r.Status) {
-            'PASS' { 'Green'  }
-            'WARN' { 'Yellow' }
-            'FAIL' { 'Red'    }
-            default { 'White' }
-        }
-        $line = "{0,-6} {1,-40} {2}" -f $r.Status, $r.Label, $r.Detail
-        Write-Host $line -ForegroundColor $color
-        switch ($r.Status) {
-            'PASS' { $passCount++ }
-            'WARN' { $warnCount++ }
-            'FAIL' { $failCount++ }
-        }
-    }
-
-    Write-Host ""
-    Write-Host ("PASS: {0}  WARN: {1}  FAIL: {2}" -f $passCount, $warnCount, $failCount)
-    Write-Host ""
-
-    if ($failCount -gt 0) {
-        Write-Host "Preflight FAILED. Resolve FAIL items before deploying." -ForegroundColor Red
-        exit 1
-    } elseif ($warnCount -gt 0) {
-        Write-Host "Preflight passed with warnings. Review WARN items before deploying." -ForegroundColor Yellow
-        exit 0
-    } else {
-        Write-Host "Preflight PASSED. Safe to deploy." -ForegroundColor Green
-        exit 0
-    }
+if (-not (Test-Path -LiteralPath $Template)) {
+    throw "CloudFormation template not found: $Template"
 }
+Assert-AssetIntegrity
+$null = Invoke-Aws sts get-caller-identity --output json
+$null = Invoke-Aws cloudformation validate-template --template-body "file://$Template"
+
+if ($FirewallOnly) {
+    $stack = Invoke-Aws cloudformation describe-stacks `
+        --stack-name $StackName `
+        --output json | ConvertFrom-Json
+    $EvidenceBucket = (
+        $stack.Stacks[0].Outputs |
+        Where-Object OutputKey -eq "EvidenceBucketName"
+    ).OutputValue
+    if (-not $EvidenceBucket) {
+        throw "Existing evidence bucket output was not found."
+    }
+    $currentInstanceId = (
+        Invoke-Aws cloudformation describe-stack-resource `
+            --stack-name $StackName `
+            --logical-resource-id PatriotPotInstanceV2 `
+            --output json | ConvertFrom-Json
+    ).StackResourceDetail.PhysicalResourceId
+    if ([string]::IsNullOrWhiteSpace($currentInstanceId)) {
+        throw "Existing native instance ID was not found."
+    }
+    Write-Host "Minimal control remediation preflight PASS"
+    Write-Host "Cowrie host key and Discord credential: not accessed"
+    Write-Host "Existing instance: $currentInstanceId (protected from replacement)"
+    Write-Host "Template ingress declaration: none"
+
+    if ($PreflightOnly) {
+        return
+    }
+
+    Section "PUBLISH CONTENT-ADDRESSED MINIMAL CONTROL BUNDLE"
+    # Publishing the complete native asset map preserves its established
+    # bundle manifest; the firewall association retrieves only its two
+    # independently SHA-256-verified files.
+    $bundle = Publish-BootstrapBundle $EvidenceBucket
+    Write-Host "Bundle: $($bundle.BundleId)"
+    Write-Host "Assets: $($bundle.AssetCount)"
+
+    Section "CREATE AND REVIEW MINIMAL CONTROL CLOUDFORMATION CHANGE SET"
+    $changeSet = New-FirewallOnlyChangeSet $bundle
+    Write-Host "Change set: $($changeSet.Id)"
+    $changeSet.Review.Changes | ForEach-Object {
+        $change = $_.ResourceChange
+        $replacement = if ($change.PSObject.Properties.Name -contains "Replacement") {
+            $change.Replacement
+        } else {
+            "N/A"
+        }
+        Write-Host (
+            "{0,-35} action={1,-8} replacement={2}" -f
+            $change.LogicalResourceId,
+            $change.Action,
+            $replacement
+        )
+    }
+
+    if (-not $ExecuteChangeSet) {
+        Write-Host "Change set passed no-replacement and protected-resource guards; not executed."
+        return
+    }
+
+    Section "EXECUTE REVIEWED MINIMAL CONTROL CHANGE SET"
+    Invoke-Aws cloudformation execute-change-set `
+        --stack-name $StackName `
+        --change-set-name $changeSet.Id
+    Invoke-Aws cloudformation wait stack-update-complete --stack-name $StackName
+    $final = Invoke-Aws cloudformation describe-stacks `
+        --stack-name $StackName `
+        --output json | ConvertFrom-Json
+    Write-Host "Final stack status: $($final.Stacks[0].StackStatus)"
+    Write-Host "Firewall and Discord monitor associations are CloudFormation-managed; runtime validation remains required."
+    return
+}
+
+$ami = Resolve-OfficialAl2Ami
+$hostKey = Get-HostKeyMetadata
+
+$stack = Invoke-Aws cloudformation describe-stacks `
+    --stack-name $StackName `
+    --output json | ConvertFrom-Json
+$EvidenceBucket = (
+    $stack.Stacks[0].Outputs |
+    Where-Object OutputKey -eq "EvidenceBucketName"
+).OutputValue
+if (-not $EvidenceBucket) {
+    throw "Existing evidence bucket output was not found."
+}
+$currentBundleId = (
+    $stack.Stacks[0].Parameters |
+    Where-Object ParameterKey -eq "BootstrapBundleId"
+).ParameterValue
+if ([string]::IsNullOrWhiteSpace($currentBundleId)) {
+    throw "Existing bootstrap bundle parameter was not found."
+}
+$desiredBundleId = Get-Sha256 (Join-Path $NativeRoot "bootstrap-native.sh")
+$currentInstanceId = (
+    Invoke-Aws cloudformation describe-stack-resource `
+        --stack-name $StackName `
+        --logical-resource-id PatriotPotInstanceV2 `
+        --output json | ConvertFrom-Json
+).StackResourceDetail.PhysicalResourceId
+$currentImageId = (
+    Invoke-Aws ec2 describe-instances `
+        --instance-ids $currentInstanceId `
+        --query "Reservations[0].Instances[0].ImageId" `
+        --output text
+)
+# UserData updates on an existing EC2 instance do not execute the new native
+# bundle. The template therefore ties its replacement-only primary ENI
+# description to BootstrapBundleId, and this guard makes absence of that
+# replacement a hard failure during change-set review.
+$requireInstanceReplacement = (
+    $currentImageId -ne $ami.ImageId -or
+    $currentBundleId -ne $desiredBundleId
+)
+
+Write-Host "Preflight PASS"
+Write-Host "AMI: $($ami.ImageId) owner=$($ami.OwnerId) alias=$($ami.ImageOwnerAlias) name=$($ami.Name)"
+Write-Host "Current bootstrap bundle: $currentBundleId"
+Write-Host "Desired bootstrap bundle: $desiredBundleId"
+Write-Host "Cowrie host-key version: $($hostKey.VersionId)"
+Write-Host "Cowrie host-key material: not retrieved (metadata-only reconciliation)"
+Write-Host "Template ingress declaration: none"
+Write-Host "Container runtime declaration: none"
+Write-Host "Instance replacement required: $requireInstanceReplacement"
 
 if ($PreflightOnly) {
-    Invoke-Preflight
+    return
 }
 
-if (-not (Test-Path $Template)) {
-    throw "Template not found: $Template"
-}
-if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
-    throw "aws CLI not found"
-}
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    throw "docker not found"
-}
+Section "PUBLISH CONTENT-ADDRESSED NATIVE ASSETS"
+$bundle = Publish-BootstrapBundle $EvidenceBucket
+Write-Host "Bundle: $($bundle.BundleId)"
+Write-Host "Assets: $($bundle.AssetCount)"
 
-# ---------------------------------------------------------------------------
-# 1. AWS AUTH
-# ---------------------------------------------------------------------------
-Section "AWS AUTHENTICATION"
-
-try {
-    $Identity = Invoke-Aws sts get-caller-identity --output json | ConvertFrom-Json
-} catch {
-    Write-Host ""
-    Write-Host "Authentication failed. Run one of:"
-    Write-Host "  aws sso login --profile $Profile"
-    Write-Host "  aws configure --profile $Profile"
-    throw
-}
-
-$AccountId = $Identity.Account
-Write-Host "Account : $AccountId"
-Write-Host "ARN     : $($Identity.Arn)"
-Write-Host "Region  : $Region"
-
-# ---------------------------------------------------------------------------
-# 2. DOCKER HEALTH
-# ---------------------------------------------------------------------------
-Section "DOCKER HEALTH CHECK"
-
-docker info *> $null
-if ($LASTEXITCODE -ne 0) {
-    throw "Docker is not running or not accessible."
-}
-Write-Host "Docker operational."
-
-# ---------------------------------------------------------------------------
-# 3. EC2 MANAGEMENT KEY
-#    Private key stays in ~/.ssh/patriotpot-2026-admin, never overwritten.
-#    Only the .pub is imported into AWS.
-#    TCP/22 is not opened; SSM Session Manager is the primary admin path.
-# ---------------------------------------------------------------------------
-Section "EC2 MANAGEMENT KEY"
-
-New-Item -ItemType Directory -Force -Path $SshDir | Out-Null
-
-$awsKeyExists = $false
-try {
-    Invoke-Aws ec2 describe-key-pairs --key-names $KeyName --output json *> $null
-    $awsKeyExists = $true
-    Write-Host "EC2 key pair already registered: $KeyName"
-} catch {
-    $awsKeyExists = $false
-}
-
-if (-not (Test-Path $KeyPath)) {
-    Write-Host "Generating ED25519 management key..."
-    & ssh-keygen -t ed25519 -a 100 -f $KeyPath -C $KeyName -N ""
-    if ($LASTEXITCODE -ne 0) {
-        throw "ssh-keygen failed for management key."
-    }
-} else {
-    Write-Host "Local private key exists, not overwriting: $KeyPath"
-}
-
-if (-not $awsKeyExists) {
-    Write-Host "Importing public key into EC2..."
-    Invoke-Aws ec2 import-key-pair `
-        --key-name $KeyName `
-        --public-key-material "fileb://$PubPath" | Out-Null
-    Write-Host "Imported: $KeyName"
-}
-
-# ---------------------------------------------------------------------------
-# 4. COWRIE SSH HOST KEY
-#    Generated once for Control-0. Stored in Secrets Manager.
-#    Reused across redeployments so the attacker-visible fingerprint is stable.
-#    Private key is never printed or placed in logs.
-# ---------------------------------------------------------------------------
-Section "COWRIE SSH HOST KEY"
-
-$secretExists = $false
-$SecretArn    = $null
-
-try {
-    $existingSecret = Invoke-Aws secretsmanager describe-secret `
-        --secret-id $SecretName --output json | ConvertFrom-Json
-    $secretExists = $true
-    $SecretArn    = $existingSecret.ARN
-    Write-Host "Cowrie host key secret already exists: $SecretName"
-} catch {
-    $secretExists = $false
-}
-
-if (-not $secretExists) {
-    if (-not (Test-Path $CowrieKeyPath)) {
-        Write-Host "Generating Cowrie SSH host key, one-time for Control-0..."
-        & ssh-keygen -t ed25519 -a 100 -f $CowrieKeyPath -C "cowrie-host-2026-control-0" -N ""
-        if ($LASTEXITCODE -ne 0) {
-            throw "ssh-keygen failed for Cowrie host key."
-        }
+Section "CREATE AND REVIEW CLOUDFORMATION CHANGE SET"
+$changeSet = New-ReviewedChangeSet $ami.ImageId $hostKey $bundle $requireInstanceReplacement
+Write-Host "Change set: $($changeSet.Id)"
+$changeSet.Review.Changes | ForEach-Object {
+    $change = $_.ResourceChange
+    $replacement = if ($change.PSObject.Properties.Name -contains "Replacement") {
+        $change.Replacement
     } else {
-        Write-Host "Local Cowrie host key exists: $CowrieKeyPath"
+        "N/A"
     }
-
-    $privBytes  = [System.IO.File]::ReadAllBytes($CowrieKeyPath)
-    $privB64    = [Convert]::ToBase64String($privBytes)
-    $pubContent = (Get-Content $CowriePubPath -Raw).Trim()
-
-    $secretValue = [ordered]@{
-        private_key_b64 = $privB64
-        public_key      = $pubContent
-    } | ConvertTo-Json -Compress
-
-    Write-Host "Storing Cowrie host key in Secrets Manager..."
-    $newSecret = Invoke-Aws secretsmanager create-secret `
-        --name $SecretName `
-        --description "PatriotPot 2026 Control-0 Cowrie SSH server host key - DO NOT ROTATE AUTOMATICALLY" `
-        --secret-string $secretValue `
-        --output json | ConvertFrom-Json
-
-    $SecretArn   = $newSecret.ARN
-    $secretValue = $null
-    $privB64     = $null
-    [System.GC]::Collect()
-    Write-Host "Secret created: $SecretArn"
+    Write-Host (
+        "{0,-35} action={1,-8} replacement={2}" -f
+        $change.LogicalResourceId,
+        $change.Action,
+        $replacement
+    )
 }
 
-# Record only the public fingerprint, never the private key
-if (Test-Path $CowriePubPath) {
-    $CowrieFingerprint = (& ssh-keygen -l -f $CowriePubPath 2>$null) -join ""
-} else {
-    # Key was stored in a prior run on another machine; retrieve only public key
-    $secretText        = Invoke-Aws secretsmanager get-secret-value `
-        --secret-id $SecretName `
-        --query SecretString `
-        --output text
-    $pubFromSecret     = ($secretText | ConvertFrom-Json).public_key
-    $tmpPub            = Join-Path $env:TEMP "pp-cowrie-pub-tmp.pub"
-    Set-Content $tmpPub $pubFromSecret -Encoding UTF8
-    $CowrieFingerprint = (& ssh-keygen -l -f $tmpPub 2>$null) -join ""
-    Remove-Item $tmpPub -Force
-}
-Write-Host "Cowrie host key fingerprint: $CowrieFingerprint"
-
-# ---------------------------------------------------------------------------
-# 5. LOCAL BUILD
-# ---------------------------------------------------------------------------
-Section "BUILDING PATRIOTPOT CONTROL IMAGE"
-
-$Timestamp  = Get-Date -Format "yyyyMMdd-HHmmss"
-$LocalImage = "patriotpot:2026-control-$Timestamp"
-
-docker build --platform linux/amd64 --tag $LocalImage .
-if ($LASTEXITCODE -ne 0) {
-    throw "Docker build failed."
+if (-not $ExecuteChangeSet) {
+    Write-Host ""
+    Write-Host "Change set passed automated replacement guards and is NOT executed."
+    Write-Host "Re-run with -ExecuteChangeSet after reviewing the displayed changes."
+    return
 }
 
-# ---------------------------------------------------------------------------
-# 6. LOCAL BEHAVIORAL SMOKE TEST
-# ---------------------------------------------------------------------------
-Section "LOCAL BEHAVIORAL SMOKE TEST"
-
-$cname = "patriotpot-control-smoketest"
-try { docker rm -f $cname 2>&1 | Out-Null } catch {}
-docker run --detach --name $cname --publish 127.0.0.1:2222:2222 $LocalImage | Out-Null
-Start-Sleep -Seconds 6
-
-try {
-    $tcp    = New-Object System.Net.Sockets.TcpClient
-    $tcp.Connect("127.0.0.1", 2222)
-    $reader = New-Object System.IO.StreamReader($tcp.GetStream())
-    $banner = $reader.ReadLine()
-    $tcp.Close()
-    Write-Host "Local SSH banner: $banner"
-    if ($banner -notmatch "SSH-2\.0-OpenSSH_6\.0p1") {
-        Write-Warning "Banner mismatch. Expected: SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2"
-    }
-} catch {
-    Write-Warning "Local smoke test TCP connect failed: $_"
-} finally {
-    try { docker rm -f $cname 2>&1 | Out-Null } catch {}
-}
-
-# ---------------------------------------------------------------------------
-# 7. ECR REPOSITORY
-# ---------------------------------------------------------------------------
-Section "ECR REPOSITORY"
-
-$repoExists = $false
-try {
-    Invoke-Aws ecr describe-repositories --repository-names $EcrRepo --output json *> $null
-    $repoExists = $true
-    Write-Host "ECR repository exists: $EcrRepo"
-} catch {
-    $repoExists = $false
-}
-
-if (-not $repoExists) {
-    Write-Host "Creating ECR repository: $EcrRepo"
-    Invoke-Aws ecr create-repository `
-        --repository-name $EcrRepo `
-        --image-scanning-configuration scanOnPush=true | Out-Null
-}
-
-$Registry = "$AccountId.dkr.ecr.$Region.amazonaws.com"
-$ImageTag  = "$Registry/${EcrRepo}:$Timestamp"
-
-# ---------------------------------------------------------------------------
-# 8. ECR LOGIN + PUSH
-# ---------------------------------------------------------------------------
-Section "PUSHING IMAGE TO ECR"
-
-# Call aws directly here so stdout flows through the pipeline to docker login
-aws ecr get-login-password --profile $Profile --region $Region |
-    docker login --username AWS --password-stdin $Registry
-if ($LASTEXITCODE -ne 0) {
-    throw "ECR login failed."
-}
-
-docker tag  $LocalImage $ImageTag
-docker push $ImageTag
-if ($LASTEXITCODE -ne 0) {
-    throw "ECR push failed."
-}
-
-$Digest = Invoke-Aws ecr describe-images `
-    --repository-name $EcrRepo `
-    --image-ids "imageTag=$Timestamp" `
-    --query "imageDetails[0].imageDigest" `
-    --output text
-
-if (-not $Digest.StartsWith("sha256:")) {
-    throw "Could not resolve image digest."
-}
-
-$ImmutableImageUri = "$Registry/${EcrRepo}@$Digest"
-
-Write-Host "Tag      : $ImageTag"
-Write-Host "Digest   : $Digest"
-Write-Host "Immutable: $ImmutableImageUri"
-
-# ---------------------------------------------------------------------------
-# 9. RESOLVE AL2023 AMI
-#    Resolved once here and pinned. No dynamic latest reference in the baseline.
-# ---------------------------------------------------------------------------
-Section "RESOLVING AMAZON LINUX 2023 AMI"
-
-$HostAmiId = Invoke-Aws ssm get-parameter `
-    --name "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64" `
-    --query "Parameter.Value" `
-    --output text
-
-if (-not $HostAmiId.StartsWith("ami-")) {
-    throw "Failed to resolve AL2023 AMI."
-}
-Write-Host "Pinned AMI: $HostAmiId"
-
-# ---------------------------------------------------------------------------
-# 10. DEPLOYMENT INPUTS MANIFEST
-# ---------------------------------------------------------------------------
-Section "WRITING DEPLOYMENT INPUTS MANIFEST"
-
-$manifest = [ordered]@{
-    generated_at_utc         = (Get-Date).ToUniversalTime().ToString("o")
-    experiment                = "PatriotPot 2026 Behavioral Reconstruction Control"
-    control                   = "Control-0"
-    aws_account               = $AccountId
-    aws_region                = $Region
-    stack_name                = $StackName
-    host_ami_id               = $HostAmiId
-    ec2_instance_type         = "t3.micro"
-    cowrie_version            = "2.5.0"
-    historical_python         = "3.8"
-    attacker_port             = 2222
-    backend                   = "shell"
-    hostname                  = "gmu-server"
-    ssh_banner                = "SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2"
-    cowrie_host_key_secret    = $SecretArn
-    cowrie_host_key_fp        = $CowrieFingerprint
-    ec2_key_pair              = $KeyName
-    container_image_tag       = $ImageTag
-    container_digest          = $Digest
-    container_image_immutable = $ImmutableImageUri
-}
-
-$manifest | ConvertTo-Json -Depth 10 |
-    Set-Content (Join-Path $ProjectRoot "deployment-inputs.json") -Encoding UTF8
-
-Write-Host "Written: deployment-inputs.json"
-
-# ---------------------------------------------------------------------------
-# 11. VALIDATE CLOUDFORMATION TEMPLATE
-# ---------------------------------------------------------------------------
-Section "VALIDATING CLOUDFORMATION TEMPLATE"
-
-Invoke-Aws cloudformation validate-template `
-    --template-body "file://$Template" *> $null
-
-Write-Host "Template valid."
-
-# ---------------------------------------------------------------------------
-# 12. DEPLOY / UPDATE STACK
-#     aws cloudformation deploy is idempotent: creates on first run, updates on subsequent.
-# ---------------------------------------------------------------------------
-Section "DEPLOYING STACK: $StackName"
-
-aws cloudformation deploy `
+Section "EXECUTE REVIEWED CHANGE SET"
+Invoke-Aws cloudformation execute-change-set `
     --stack-name $StackName `
-    --template-file $Template `
-    --capabilities CAPABILITY_NAMED_IAM `
-    --parameter-overrides `
-        "Environment=$Environment" `
-        "ContainerImageUri=$ImmutableImageUri" `
-        "HostAmiId=$HostAmiId" `
-        "KeyPairName=$KeyName" `
-        "CowrieHostKeySecret=$SecretArn" `
-    --tags `
-        "Project=PatriotPot" `
-        "Experiment=SwarmKillChain" `
-        "Control=Control-0" `
-        "Environment=$Environment" `
-    --region $Region `
-    --profile $Profile `
-    --no-fail-on-empty-changeset
-
-if ($LASTEXITCODE -ne 0) {
-    throw "CloudFormation deployment failed."
-}
-
-# ---------------------------------------------------------------------------
-# 13. STACK OUTPUTS
-# ---------------------------------------------------------------------------
-Section "STACK OUTPUTS"
-
-$Outputs = Invoke-Aws cloudformation describe-stacks `
+    --change-set-name $changeSet.Id
+Invoke-Aws cloudformation wait stack-update-complete --stack-name $StackName
+$final = Invoke-Aws cloudformation describe-stacks `
     --stack-name $StackName `
-    --query "Stacks[0].Outputs" `
     --output json | ConvertFrom-Json
-
-$OutputMap = @{}
-foreach ($o in $Outputs) {
-    $OutputMap[$o.OutputKey] = $o.OutputValue
-    Write-Host ("{0,-30} {1}" -f $o.OutputKey, $o.OutputValue)
-}
-
-# ---------------------------------------------------------------------------
-# 14. LOCATE INSTANCE AND WAIT FOR RUNNING STATE
-# ---------------------------------------------------------------------------
-Section "WAITING FOR EC2 INSTANCE"
-
-$InstanceId = Invoke-Aws ec2 describe-instances `
-    --filters `
-        "Name=tag:aws:cloudformation:stack-name,Values=$StackName" `
-        "Name=instance-state-name,Values=pending,running" `
-    --query "Reservations[].Instances[].InstanceId" `
-    --output text
-
-if (-not $InstanceId) {
-    throw "Could not locate EC2 instance in stack $StackName."
-}
-Write-Host "Instance: $InstanceId"
-
-Invoke-Aws ec2 wait instance-running --instance-ids $InstanceId
-Write-Host "Instance running."
-
-$PublicIp = Invoke-Aws ec2 describe-instances `
-    --instance-ids $InstanceId `
-    --query "Reservations[0].Instances[0].PublicIpAddress" `
-    --output text
-
-Write-Host "Public IP: $PublicIp"
-
-# ---------------------------------------------------------------------------
-# 15. WAIT FOR TCP/2222
-#     Up to 5 minutes; UserData must pull from ECR and start Cowrie first.
-# ---------------------------------------------------------------------------
-Section "WAITING FOR TCP/2222"
-
-$ready = $false
-for ($i = 1; $i -le 60; $i++) {
-    try {
-        $c    = New-Object System.Net.Sockets.TcpClient
-        $task = $c.ConnectAsync($PublicIp, 2222)
-        if ($task.Wait(2000) -and $c.Connected) {
-            $c.Close()
-            $ready = $true
-            break
-        }
-    } catch {}
-    Write-Host "Attempt $i/60 - waiting 10s..."
-    Start-Sleep -Seconds 10
-}
-
-if (-not $ready) {
-    throw "TCP/2222 did not become reachable within 10 minutes."
-}
-Write-Host "TCP/2222 reachable."
-
-# ---------------------------------------------------------------------------
-# 16. REMOTE SSH BANNER VERIFICATION
-# ---------------------------------------------------------------------------
-Section "REMOTE SSH IDENTIFICATION"
-
-Start-Sleep -Seconds 2
-$tcp    = New-Object System.Net.Sockets.TcpClient
-$tcp.Connect($PublicIp, 2222)
-$reader = New-Object System.IO.StreamReader($tcp.GetStream())
-$RemoteBanner = $reader.ReadLine()
-$tcp.Close()
-
-Write-Host "Remote banner: $RemoteBanner"
-
-if ($RemoteBanner -notmatch "SSH-2\.0-OpenSSH_6\.0p1") {
-    Write-Warning "Remote banner does not match expected SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2"
-}
-
-# ---------------------------------------------------------------------------
-# 17. BEHAVIORAL EQUIVALENCE VALIDATOR
-# ---------------------------------------------------------------------------
-Section "BEHAVIORAL EQUIVALENCE VALIDATION"
-
-$validator = Join-Path $ProjectRoot "validate-behavioral-equivalence.py"
-if (Test-Path $validator) {
-    python $validator --target $PublicIp --port 2222
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Behavioral equivalence validator reported failures."
-    }
-} else {
-    Write-Warning "Validator script not found: $validator"
-}
-
-# ---------------------------------------------------------------------------
-# 18. SUMMARY
-# ---------------------------------------------------------------------------
-Section "PATRIOTPOT CONTROL-0 DEPLOYED"
-
-Write-Host "Stack         : $StackName"
-Write-Host "Instance      : $InstanceId"
-Write-Host "Sensor        : $PublicIp`:2222"
-Write-Host "Host AMI      : $HostAmiId"
-Write-Host "Container     : $ImmutableImageUri"
-Write-Host "Cowrie key    : $SecretName"
-Write-Host "Key FP        : $CowrieFingerprint"
-Write-Host "Mgmt key      : $KeyPath"
-Write-Host "              : break-glass only, TCP/22 is CLOSED"
-Write-Host ""
-Write-Host "SSM session:"
-Write-Host "  aws ssm start-session --target $InstanceId --profile $Profile --region $Region"
-Write-Host ""
-Write-Host "Next:"
-Write-Host "  python .\validate-behavioral-equivalence.py --target $PublicIp --port 2222"
+Write-Host "Final stack status: $($final.Stacks[0].StackStatus)"
+Write-Host "Deployment complete. Perform fresh SSM/runtime validation before claiming success."

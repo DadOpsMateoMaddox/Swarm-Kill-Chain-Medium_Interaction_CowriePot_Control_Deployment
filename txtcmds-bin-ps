@@ -1,0 +1,6 @@
+  PID TTY          TIME CMD
+    1 ?        00:00:01 systemd
+  847 ?        00:00:00 mysqld
+ 1024 ?        00:00:02 apache2
+ 1157 ?        00:00:00 sshd
+ 2341 pts/0    00:00:00 bash
