@@ -1,0 +1,129 @@
+{
+    "Stacks": [
+        {
+            "StackId": "arn:aws:cloudformation:us-east-1:706162601288:stack/patriotpot-2026-control-prod/90c016a0-af23-11f1-8878-0affff84d99f",
+            "StackName": "patriotpot-2026-control-prod",
+            "ChangeSetId": "arn:aws:cloudformation:us-east-1:706162601288:changeSet/egress-firewall-20260918T022536Z/b80a20a8-0f11-4580-b2a3-6cf865f427f6",
+            "Description": "PatriotPot 2026 pre-exposure native control sensor. Official pinned Amazon Linux 2, side-by-side CPython 3.8, Cowrie v2.5.0, systemd, local JSON, independent S3 evidence archival, CloudWatch operations, and SSM-only management. This template declares no inbound security-group rules.\n",
+            "Parameters": [
+                {
+                    "ParameterKey": "FirewallBundleId",
+                    "ParameterValue": "f10344400557d7f8e7473cd026d23e00b88a03bc3e7d251c5c78b1d92912c9cc"
+                },
+                {
+                    "ParameterKey": "DiscordMonitorSha256",
+                    "ParameterValue": "a8606b55fad0ba9e403f690f86e1d4c1eb52b3f36c162369f0266343ce9930d9"
+                },
+                {
+                    "ParameterKey": "HostAmiId",
+                    "ParameterValue": "ami-0b3ff1b856ac6fda3"
+                },
+                {
+                    "ParameterKey": "FirewallScriptSha256",
+                    "ParameterValue": "0e1167ceb9f2c546ba5ba3a0c1e98b78e6b8625eee6d963d16de5692b757e839"
+                },
+                {
+                    "ParameterKey": "DiscordWebhookParameterName",
+                    "ParameterValue": "/patriotpot/2026-control/discord-webhook"
+                },
+                {
+                    "ParameterKey": "BootstrapBundleId",
+                    "ParameterValue": "776733848f3b2d2163ab37bc95fd0db37651ada65a4ef25a38490e39e6d13b1e"
+                },
+                {
+                    "ParameterKey": "CowrieHostKeySecret",
+                    "ParameterValue": "****"
+                },
+                {
+                    "ParameterKey": "FirewallUnitSha256",
+                    "ParameterValue": "11d9124d1390bd44985cb6884e032b80979ac0f8029b541230732f7cdcd026e8"
+                },
+                {
+                    "ParameterKey": "Environment",
+                    "ParameterValue": "production"
+                },
+                {
+                    "ParameterKey": "InstanceType",
+                    "ParameterValue": "t3.micro"
+                },
+                {
+                    "ParameterKey": "BootstrapScriptSha256",
+                    "ParameterValue": "776733848f3b2d2163ab37bc95fd0db37651ada65a4ef25a38490e39e6d13b1e"
+                },
+                {
+                    "ParameterKey": "CowrieHostKeyVersionId",
+                    "ParameterValue": "****"
+                }
+            ],
+            "CreationTime": "2026-09-13T03:31:11.329000+00:00",
+            "LastUpdatedTime": "2026-09-18T04:56:20.091000+00:00",
+            "RollbackConfiguration": {},
+            "StackStatus": "UPDATE_COMPLETE",
+            "DisableRollback": false,
+            "DeploymentConfig": {
+                "Mode": "STANDARD",
+                "DisableRollback": false
+            },
+            "NotificationARNs": [],
+            "Capabilities": [
+                "CAPABILITY_NAMED_IAM"
+            ],
+            "Outputs": [
+                {
+                    "OutputKey": "ExposureState",
+                    "OutputValue": "NO_INGRESS_SSM_ONLY",
+                    "Description": "Network exposure gate"
+                },
+                {
+                    "OutputKey": "SSMSessionLink",
+                    "OutputValue": "https://console.aws.amazon.com/systems-manager/session-manager/i-00270aeefb6266a7b?region=us-east-1",
+                    "Description": "SSM Session Manager console link; host sshd and TCP/22 ingress are disabled"
+                },
+                {
+                    "OutputKey": "ControlElasticIp",
+                    "OutputValue": "13.217.73.134",
+                    "Description": "Preserved Elastic IP allocation. PRE-EXPOSURE: the attached security group has zero IPv4 and IPv6 ingress rules; this is not an attacker endpoint.\n"
+                },
+                {
+                    "OutputKey": "EvidenceBucketName",
+                    "OutputValue": "patriotpot-evidence-706162601288-us-east-1",
+                    "Description": "Versioned S3 bucket for independent content-addressed evidence",
+                    "ExportName": "patriotpot-evidence-bucket-production"
+                },
+                {
+                    "OutputKey": "InstanceId",
+                    "OutputValue": "i-00270aeefb6266a7b",
+                    "Description": "Native Amazon Linux 2 EC2 instance ID"
+                }
+            ],
+            "Tags": [
+                {
+                    "Key": "Project",
+                    "Value": "PatriotPot"
+                },
+                {
+                    "Key": "Control",
+                    "Value": "Control-0"
+                },
+                {
+                    "Key": "Experiment",
+                    "Value": "SwarmKillChain"
+                },
+                {
+                    "Key": "Environment",
+                    "Value": "production"
+                }
+            ],
+            "EnableTerminationProtection": false,
+            "DriftInformation": {
+                "StackDriftStatus": "NOT_CHECKED"
+            },
+            "LastOperations": [
+                {
+                    "OperationType": "UPDATE_STACK",
+                    "OperationId": "e533e49e-f26f-471a-ade4-20cf60a153a0"
+                }
+            ]
+        }
+    ]
+}

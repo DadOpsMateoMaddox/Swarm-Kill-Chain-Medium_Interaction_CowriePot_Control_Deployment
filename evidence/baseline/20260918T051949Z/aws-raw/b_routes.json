@@ -1,0 +1,90 @@
+{
+    "RouteTables": [
+        {
+            "Associations": [
+                {
+                    "Main": false,
+                    "RouteTableAssociationId": "rtbassoc-05716dc8aa086bd01",
+                    "RouteTableId": "rtb-094125482392c9dc7",
+                    "SubnetId": "subnet-0fbf872e244d856af",
+                    "AssociationState": {
+                        "State": "associated"
+                    }
+                }
+            ],
+            "PropagatingVgws": [],
+            "RouteTableId": "rtb-094125482392c9dc7",
+            "Routes": [
+                {
+                    "DestinationCidrBlock": "10.0.0.0/16",
+                    "GatewayId": "local",
+                    "Origin": "CreateRouteTable",
+                    "State": "active"
+                },
+                {
+                    "DestinationCidrBlock": "0.0.0.0/0",
+                    "GatewayId": "igw-0033bfd6ead475543",
+                    "Origin": "CreateRoute",
+                    "State": "active"
+                }
+            ],
+            "Tags": [
+                {
+                    "Key": "Control",
+                    "Value": "Control-0"
+                },
+                {
+                    "Key": "Project",
+                    "Value": "PatriotPot"
+                },
+                {
+                    "Key": "aws:cloudformation:logical-id",
+                    "Value": "PublicRouteTable"
+                },
+                {
+                    "Key": "Environment",
+                    "Value": "production"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-id",
+                    "Value": "arn:aws:cloudformation:us-east-1:706162601288:stack/patriotpot-2026-control-prod/90c016a0-af23-11f1-8878-0affff84d99f"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-name",
+                    "Value": "patriotpot-2026-control-prod"
+                },
+                {
+                    "Key": "Experiment",
+                    "Value": "SwarmKillChain"
+                }
+            ],
+            "VpcId": "vpc-09d6a384845f65344",
+            "OwnerId": "706162601288"
+        },
+        {
+            "Associations": [
+                {
+                    "Main": true,
+                    "RouteTableAssociationId": "rtbassoc-01d8d5dbc69f6c2cb",
+                    "RouteTableId": "rtb-022ae87848fe765a6",
+                    "AssociationState": {
+                        "State": "associated"
+                    }
+                }
+            ],
+            "PropagatingVgws": [],
+            "RouteTableId": "rtb-022ae87848fe765a6",
+            "Routes": [
+                {
+                    "DestinationCidrBlock": "10.0.0.0/16",
+                    "GatewayId": "local",
+                    "Origin": "CreateRouteTable",
+                    "State": "active"
+                }
+            ],
+            "Tags": [],
+            "VpcId": "vpc-09d6a384845f65344",
+            "OwnerId": "706162601288"
+        }
+    ]
+}

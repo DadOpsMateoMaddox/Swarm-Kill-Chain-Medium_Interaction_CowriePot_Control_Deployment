@@ -1,0 +1,205 @@
+{
+    "Reservations": [
+        {
+            "ReservationId": "r-0130c85af08eaa178",
+            "OwnerId": "706162601288",
+            "RequesterId": "043234062703",
+            "Groups": [],
+            "Instances": [
+                {
+                    "Architecture": "x86_64",
+                    "BlockDeviceMappings": [
+                        {
+                            "DeviceName": "/dev/xvda",
+                            "Ebs": {
+                                "AttachTime": "2026-09-16T20:03:28+00:00",
+                                "DeleteOnTermination": true,
+                                "Status": "attached",
+                                "VolumeId": "vol-04c551bceb1170076",
+                                "EbsCardIndex": 0
+                            }
+                        }
+                    ],
+                    "ClientToken": "b9b3259b-2b19-0265-75ed-93070b71b52e",
+                    "EbsOptimized": false,
+                    "EnaSupport": true,
+                    "Hypervisor": "xen",
+                    "IamInstanceProfile": {
+                        "Arn": "arn:aws:iam::706162601288:instance-profile/patriotpot-2026-control-prod-PatriotPotInstanceProfile-agCkqDK8fVYb",
+                        "Id": "AIPA2I2USFVEFIZN5KJBC"
+                    },
+                    "NetworkInterfaces": [
+                        {
+                            "Association": {
+                                "IpOwnerId": "706162601288",
+                                "PublicDnsName": "ec2-13-217-73-134.compute-1.amazonaws.com",
+                                "PublicIp": "13.217.73.134"
+                            },
+                            "Attachment": {
+                                "AttachTime": "2026-09-16T20:03:27+00:00",
+                                "AttachmentId": "eni-attach-036ce1c7ea8924411",
+                                "DeleteOnTermination": true,
+                                "DeviceIndex": 0,
+                                "Status": "attached",
+                                "NetworkCardIndex": 0
+                            },
+                            "Description": "patriotpot-native-bootstrap-776733848f3b2d2163ab37bc95fd0db37651ada65a4ef25a38490e39e6d13b1e",
+                            "Groups": [
+                                {
+                                    "GroupId": "sg-0647129753848a7b0",
+                                    "GroupName": "patriotpot-2026-control-prod-PatriotPotSecurityGroup-sKBcmjiH7RAl"
+                                }
+                            ],
+                            "Ipv6Addresses": [],
+                            "MacAddress": "02:ff:ec:56:ba:c9",
+                            "NetworkInterfaceId": "eni-05699c39be981ea62",
+                            "OwnerId": "706162601288",
+                            "PrivateDnsName": "ip-10-0-1-246.ec2.internal",
+                            "PrivateIpAddress": "10.0.1.246",
+                            "PrivateIpAddresses": [
+                                {
+                                    "Association": {
+                                        "IpOwnerId": "706162601288",
+                                        "PublicDnsName": "ec2-13-217-73-134.compute-1.amazonaws.com",
+                                        "PublicIp": "13.217.73.134"
+                                    },
+                                    "Primary": true,
+                                    "PrivateDnsName": "ip-10-0-1-246.ec2.internal",
+                                    "PrivateIpAddress": "10.0.1.246"
+                                }
+                            ],
+                            "SourceDestCheck": true,
+                            "Status": "in-use",
+                            "SubnetId": "subnet-0fbf872e244d856af",
+                            "VpcId": "vpc-09d6a384845f65344",
+                            "InterfaceType": "interface",
+                            "Operator": {
+                                "Managed": false
+                            }
+                        }
+                    ],
+                    "RootDeviceName": "/dev/xvda",
+                    "RootDeviceType": "ebs",
+                    "SecurityGroups": [
+                        {
+                            "GroupId": "sg-0647129753848a7b0",
+                            "GroupName": "patriotpot-2026-control-prod-PatriotPotSecurityGroup-sKBcmjiH7RAl"
+                        }
+                    ],
+                    "SourceDestCheck": true,
+                    "Tags": [
+                        {
+                            "Key": "aws:cloudformation:stack-name",
+                            "Value": "patriotpot-2026-control-prod"
+                        },
+                        {
+                            "Key": "Exposure",
+                            "Value": "disabled"
+                        },
+                        {
+                            "Key": "aws:cloudformation:logical-id",
+                            "Value": "PatriotPotInstanceV2"
+                        },
+                        {
+                            "Key": "Project",
+                            "Value": "PatriotPot"
+                        },
+                        {
+                            "Key": "Control",
+                            "Value": "Control-0"
+                        },
+                        {
+                            "Key": "Environment",
+                            "Value": "production"
+                        },
+                        {
+                            "Key": "Name",
+                            "Value": "patriotpot-2026-native-production"
+                        },
+                        {
+                            "Key": "Experiment",
+                            "Value": "SwarmKillChain"
+                        },
+                        {
+                            "Key": "aws:cloudformation:stack-id",
+                            "Value": "arn:aws:cloudformation:us-east-1:706162601288:stack/patriotpot-2026-control-prod/90c016a0-af23-11f1-8878-0affff84d99f"
+                        },
+                        {
+                            "Key": "Runtime",
+                            "Value": "native"
+                        }
+                    ],
+                    "VirtualizationType": "hvm",
+                    "CpuOptions": {
+                        "CoreCount": 1,
+                        "ThreadsPerCore": 2
+                    },
+                    "CapacityReservationSpecification": {
+                        "CapacityReservationPreference": "open"
+                    },
+                    "HibernationOptions": {
+                        "Configured": false
+                    },
+                    "MetadataOptions": {
+                        "State": "applied",
+                        "HttpTokens": "required",
+                        "HttpPutResponseHopLimit": 1,
+                        "HttpEndpoint": "enabled",
+                        "HttpProtocolIpv6": "disabled",
+                        "InstanceMetadataTags": "disabled"
+                    },
+                    "EnclaveOptions": {
+                        "Enabled": false
+                    },
+                    "PlatformDetails": "Linux/UNIX",
+                    "UsageOperation": "RunInstances",
+                    "UsageOperationUpdateTime": "2026-09-16T20:03:27+00:00",
+                    "PrivateDnsNameOptions": {
+                        "HostnameType": "ip-name",
+                        "EnableResourceNameDnsARecord": false,
+                        "EnableResourceNameDnsAAAARecord": false
+                    },
+                    "MaintenanceOptions": {
+                        "AutoRecovery": "default",
+                        "RebootMigration": "default"
+                    },
+                    "CurrentInstanceBootMode": "legacy-bios",
+                    "NetworkPerformanceOptions": {
+                        "BandwidthWeighting": "default"
+                    },
+                    "Operator": {
+                        "Managed": false,
+                        "HiddenByDefault": false
+                    },
+                    "SecondaryInterfaces": [],
+                    "InstanceId": "i-00270aeefb6266a7b",
+                    "ImageId": "ami-0b3ff1b856ac6fda3",
+                    "State": {
+                        "Code": 16,
+                        "Name": "running"
+                    },
+                    "PrivateDnsName": "ip-10-0-1-246.ec2.internal",
+                    "PublicDnsName": "ec2-13-217-73-134.compute-1.amazonaws.com",
+                    "StateTransitionReason": "",
+                    "AmiLaunchIndex": 0,
+                    "ProductCodes": [],
+                    "InstanceType": "t3.micro",
+                    "LaunchTime": "2026-09-16T20:03:27+00:00",
+                    "Placement": {
+                        "AvailabilityZoneId": "use1-az1",
+                        "GroupName": "",
+                        "Tenancy": "default",
+                        "AvailabilityZone": "us-east-1a"
+                    },
+                    "Monitoring": {
+                        "State": "disabled"
+                    },
+                    "SubnetId": "subnet-0fbf872e244d856af",
+                    "VpcId": "vpc-09d6a384845f65344",
+                    "PrivateIpAddress": "10.0.1.246",
+                    "PublicIpAddress": "13.217.73.134"
+                }
+            ]
+        }
+    ]
+}

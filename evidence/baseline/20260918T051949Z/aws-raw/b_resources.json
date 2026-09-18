@@ -1,0 +1,204 @@
+{
+    "StackResourceSummaries": [
+        {
+            "LogicalResourceId": "AttachGateway",
+            "PhysicalResourceId": "IGW|vpc-09d6a384845f65344",
+            "ResourceType": "AWS::EC2::VPCGatewayAttachment",
+            "LastUpdatedTimestamp": "2026-09-13T03:31:35.627000+00:00",
+            "ResourceStatus": "CREATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "NOT_CHECKED"
+            }
+        },
+        {
+            "LogicalResourceId": "EvidenceBucket",
+            "PhysicalResourceId": "patriotpot-evidence-706162601288-us-east-1",
+            "ResourceType": "AWS::S3::Bucket",
+            "LastUpdatedTimestamp": "2026-09-15T05:30:37.112000+00:00",
+            "ResourceStatus": "UPDATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "EvidenceBucketPolicy",
+            "PhysicalResourceId": "patriotpot-evidence-706162601288-us-east-1",
+            "ResourceType": "AWS::S3::BucketPolicy",
+            "LastUpdatedTimestamp": "2026-09-16T20:13:25.857000+00:00",
+            "ResourceStatus": "UPDATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "NOT_CHECKED"
+            }
+        },
+        {
+            "LogicalResourceId": "EvidenceClaimTable",
+            "PhysicalResourceId": "patriotpot-2026-control-prod-EvidenceClaimTable-18LNMTI2A2DCU",
+            "ResourceType": "AWS::DynamoDB::Table",
+            "LastUpdatedTimestamp": "2026-09-16T20:03:17.410000+00:00",
+            "ResourceStatus": "UPDATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "InternetGateway",
+            "PhysicalResourceId": "igw-0033bfd6ead475543",
+            "ResourceType": "AWS::EC2::InternetGateway",
+            "LastUpdatedTimestamp": "2026-09-13T03:31:35.719000+00:00",
+            "ResourceStatus": "CREATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PatriotPotDiscordMonitorAssociation",
+            "PhysicalResourceId": "7e8affa7-080b-4b98-a76b-50bac03dab3f",
+            "ResourceType": "AWS::SSM::Association",
+            "LastUpdatedTimestamp": "2026-09-18T04:56:59.384000+00:00",
+            "ResourceStatus": "UPDATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PatriotPotEIP",
+            "PhysicalResourceId": "13.217.73.134",
+            "ResourceType": "AWS::EC2::EIP",
+            "LastUpdatedTimestamp": "2026-09-18T04:56:44.550000+00:00",
+            "ResourceStatus": "UPDATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PatriotPotEgressFirewallAssociation",
+            "PhysicalResourceId": "ad98be8e-8f5f-42af-b06a-5e630124f6b2",
+            "ResourceType": "AWS::SSM::Association",
+            "LastUpdatedTimestamp": "2026-09-18T04:56:59.440000+00:00",
+            "ResourceStatus": "UPDATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PatriotPotInstanceProfile",
+            "PhysicalResourceId": "patriotpot-2026-control-prod-PatriotPotInstanceProfile-agCkqDK8fVYb",
+            "ResourceType": "AWS::IAM::InstanceProfile",
+            "LastUpdatedTimestamp": "2026-09-13T03:34:05.001000+00:00",
+            "ResourceStatus": "CREATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PatriotPotInstanceRole",
+            "PhysicalResourceId": "patriotpot-instance-role-production",
+            "ResourceType": "AWS::IAM::Role",
+            "LastUpdatedTimestamp": "2026-09-18T04:56:41.193000+00:00",
+            "ResourceStatus": "UPDATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PatriotPotInstanceV2",
+            "PhysicalResourceId": "i-00270aeefb6266a7b",
+            "ResourceType": "AWS::EC2::Instance",
+            "LastUpdatedTimestamp": "2026-09-16T20:08:00.135000+00:00",
+            "ResourceStatus": "UPDATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PatriotPotLogGroup",
+            "PhysicalResourceId": "/patriotpot/honeypot",
+            "ResourceType": "AWS::Logs::LogGroup",
+            "LastUpdatedTimestamp": "2026-09-15T05:30:13.584000+00:00",
+            "ResourceStatus": "UPDATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PatriotPotLogGroupJson",
+            "PhysicalResourceId": "/patriotpot/honeypot-json",
+            "ResourceType": "AWS::Logs::LogGroup",
+            "LastUpdatedTimestamp": "2026-09-15T05:30:13.605000+00:00",
+            "ResourceStatus": "UPDATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PatriotPotOperationsLogGroup",
+            "PhysicalResourceId": "/patriotpot/operations",
+            "ResourceType": "AWS::Logs::LogGroup",
+            "LastUpdatedTimestamp": "2026-09-15T05:30:23.211000+00:00",
+            "ResourceStatus": "CREATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PatriotPotSecurityGroup",
+            "PhysicalResourceId": "sg-0647129753848a7b0",
+            "ResourceType": "AWS::EC2::SecurityGroup",
+            "LastUpdatedTimestamp": "2026-09-16T23:23:18.591000+00:00",
+            "ResourceStatus": "UPDATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PublicRoute",
+            "PhysicalResourceId": "rtb-094125482392c9dc7|0.0.0.0/0",
+            "ResourceType": "AWS::EC2::Route",
+            "LastUpdatedTimestamp": "2026-09-13T03:31:46.771000+00:00",
+            "ResourceStatus": "CREATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PublicRouteTable",
+            "PhysicalResourceId": "rtb-094125482392c9dc7",
+            "ResourceType": "AWS::EC2::RouteTable",
+            "LastUpdatedTimestamp": "2026-09-13T03:31:44.725000+00:00",
+            "ResourceStatus": "CREATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "PublicSubnet",
+            "PhysicalResourceId": "subnet-0fbf872e244d856af",
+            "ResourceType": "AWS::EC2::Subnet",
+            "LastUpdatedTimestamp": "2026-09-13T03:31:37.337000+00:00",
+            "ResourceStatus": "CREATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        },
+        {
+            "LogicalResourceId": "SubnetRouteTableAssociation",
+            "PhysicalResourceId": "rtbassoc-05716dc8aa086bd01",
+            "ResourceType": "AWS::EC2::SubnetRouteTableAssociation",
+            "LastUpdatedTimestamp": "2026-09-13T03:31:39.529000+00:00",
+            "ResourceStatus": "CREATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "NOT_CHECKED"
+            }
+        },
+        {
+            "LogicalResourceId": "VPC",
+            "PhysicalResourceId": "vpc-09d6a384845f65344",
+            "ResourceType": "AWS::EC2::VPC",
+            "LastUpdatedTimestamp": "2026-09-13T03:31:32.485000+00:00",
+            "ResourceStatus": "CREATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "IN_SYNC"
+            }
+        }
+    ]
+}

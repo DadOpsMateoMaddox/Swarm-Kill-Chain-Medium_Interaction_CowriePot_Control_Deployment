@@ -1,0 +1,44 @@
+{
+    "InternetGateways": [
+        {
+            "Attachments": [
+                {
+                    "State": "available",
+                    "VpcId": "vpc-09d6a384845f65344"
+                }
+            ],
+            "InternetGatewayId": "igw-0033bfd6ead475543",
+            "OwnerId": "706162601288",
+            "Tags": [
+                {
+                    "Key": "aws:cloudformation:stack-id",
+                    "Value": "arn:aws:cloudformation:us-east-1:706162601288:stack/patriotpot-2026-control-prod/90c016a0-af23-11f1-8878-0affff84d99f"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-name",
+                    "Value": "patriotpot-2026-control-prod"
+                },
+                {
+                    "Key": "Experiment",
+                    "Value": "SwarmKillChain"
+                },
+                {
+                    "Key": "Project",
+                    "Value": "PatriotPot"
+                },
+                {
+                    "Key": "Environment",
+                    "Value": "production"
+                },
+                {
+                    "Key": "Control",
+                    "Value": "Control-0"
+                },
+                {
+                    "Key": "aws:cloudformation:logical-id",
+                    "Value": "InternetGateway"
+                }
+            ]
+        }
+    ]
+}

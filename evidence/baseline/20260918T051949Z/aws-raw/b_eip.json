@@ -1,0 +1,54 @@
+{
+    "Addresses": [
+        {
+            "AllocationId": "eipalloc-0de839802f07b5a62",
+            "AssociationId": "eipassoc-0a00db434fa29cbb7",
+            "Domain": "vpc",
+            "NetworkInterfaceId": "eni-05699c39be981ea62",
+            "NetworkInterfaceOwnerId": "706162601288",
+            "PrivateIpAddress": "10.0.1.246",
+            "Tags": [
+                {
+                    "Key": "aws:cloudformation:stack-name",
+                    "Value": "patriotpot-2026-control-prod"
+                },
+                {
+                    "Key": "aws:cloudformation:logical-id",
+                    "Value": "PatriotPotEIP"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-id",
+                    "Value": "arn:aws:cloudformation:us-east-1:706162601288:stack/patriotpot-2026-control-prod/90c016a0-af23-11f1-8878-0affff84d99f"
+                },
+                {
+                    "Key": "Experiment",
+                    "Value": "SwarmKillChain"
+                },
+                {
+                    "Key": "Project",
+                    "Value": "PatriotPot"
+                },
+                {
+                    "Key": "Exposure",
+                    "Value": "disabled"
+                },
+                {
+                    "Key": "Control",
+                    "Value": "Control-0"
+                },
+                {
+                    "Key": "Environment",
+                    "Value": "production"
+                },
+                {
+                    "Key": "Name",
+                    "Value": "patriotpot-eip-production"
+                }
+            ],
+            "PublicIpv4Pool": "amazon",
+            "NetworkBorderGroup": "us-east-1",
+            "InstanceId": "i-00270aeefb6266a7b",
+            "PublicIp": "13.217.73.134"
+        }
+    ]
+}

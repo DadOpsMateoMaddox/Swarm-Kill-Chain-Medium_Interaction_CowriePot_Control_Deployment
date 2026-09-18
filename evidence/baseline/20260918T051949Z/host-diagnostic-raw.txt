@@ -1,0 +1,247 @@
+##### SECTION3_HOST_IDENTITY #####
+NAME="Amazon Linux"
+VERSION="2"
+ID="amzn"
+ID_LIKE="centos rhel fedora"
+VERSION_ID="2"
+PRETTY_NAME="Amazon Linux 2"
+ANSI_COLOR="0;33"
+CPE_NAME="cpe:2.3:o:amazon:amazon_linux:2"
+HOME_URL="https://amazonlinux.com/"
+SUPPORT_END="2026-06-30"
+Linux ip-10-0-1-246.ec2.internal 4.14.355-284.742.amzn2.x86_64 #1 SMP Tue Aug 25 17:04:36 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+Fri Sep 18 05:19:49 UTC 2026
+      Local time: Fri 2026-09-18 05:19:49 UTC
+       Time zone: n/a (UTC, +0000)
+     NTP enabled: yes
+NTP synchronized: yes
+Reference ID    : A9FEA97B (169.254.169.123)
+Stratum         : 4
+Ref time (UTC)  : Fri Sep 18 05:19:35 2026
+System time     : 0.000002638 seconds slow of NTP time
+Last offset     : -0.000002717 seconds
+   Static hostname: ip-10-0-1-246.ec2.internal
+235256f6-4006-4667-b8dc-dc24eef8d035
+Python 3.8.20
+000116838246ce522b1f6953c6f108a3a4f0611c
+v2.5.0
+Twisted==22.10.0
+##### SECTION4_SERVICE_STATE #####
+-- cowrie.service --
+active
+enabled
+MainPID=2307
+ActiveEnterTimestamp=Wed 2026-09-16 23:27:52 UTC
+-- patriotpot-discord.service --
+active
+enabled
+MainPID=10617
+ActiveEnterTimestamp=Fri 2026-09-18 04:56:45 UTC
+-- patriotpot-egress-firewall.service --
+active
+enabled
+MainPID=0
+ActiveEnterTimestamp=Wed 2026-09-16 23:27:52 UTC
+-- patriotpot-archive.service --
+inactive
+static
+MainPID=0
+ActiveEnterTimestamp=
+-- patriotpot-archive.timer --
+active
+enabled
+ActiveEnterTimestamp=Wed 2026-09-16 23:27:48 UTC
+-- amazon-cloudwatch-agent.service --
+active
+enabled
+MainPID=2032
+ActiveEnterTimestamp=Wed 2026-09-16 23:27:49 UTC
+-- amazon-ssm-agent.service --
+active
+enabled
+MainPID=2295
+ActiveEnterTimestamp=Wed 2026-09-16 23:27:52 UTC
+##### SECTION5_LISTENERS #####
+Netid State  Recv-Q Send-Q                  Local Address:Port Peer Address:PortProcess                            
+udp   UNCONN 0      0                             0.0.0.0:1021      0.0.0.0:*    users:(("rpcbind",pid=1703,fd=7)) 
+udp   UNCONN 0      0                             0.0.0.0:68        0.0.0.0:*    users:(("dhclient",pid=1940,fd=6))
+udp   UNCONN 0      0                             0.0.0.0:111       0.0.0.0:*    users:(("rpcbind",pid=1703,fd=6)) 
+udp   UNCONN 0      0                           127.0.0.1:323       0.0.0.0:*    users:(("chronyd",pid=1728,fd=5)) 
+udp   UNCONN 0      0                                [::]:1021         [::]:*    users:(("rpcbind",pid=1703,fd=10))
+udp   UNCONN 0      0      [fe80::ff:ecff:fe56:bac9]%eth0:546          [::]:*    users:(("dhclient",pid=1987,fd=5))
+udp   UNCONN 0      0                                [::]:111          [::]:*    users:(("rpcbind",pid=1703,fd=9)) 
+udp   UNCONN 0      0                               [::1]:323          [::]:*    users:(("chronyd",pid=1728,fd=6)) 
+tcp   LISTEN 0      100                         127.0.0.1:25        0.0.0.0:*    users:(("master",pid=2132,fd=13)) 
+tcp   LISTEN 0      50                            0.0.0.0:2222      0.0.0.0:*    users:(("twistd",pid=2307,fd=8))  
+tcp   LISTEN 0      128                           0.0.0.0:111       0.0.0.0:*    users:(("rpcbind",pid=1703,fd=8)) 
+tcp   LISTEN 0      128                              [::]:111          [::]:*    users:(("rpcbind",pid=1703,fd=11))
+##### SECTION6_EGRESS_FIREWALL #####
+active
+enabled
+0e1167ceb9f2c546ba5ba3a0c1e98b78e6b8625eee6d963d16de5692b757e839  /usr/local/libexec/patriotpot-egress-firewall
+11d9124d1390bd44985cb6884e032b80979ac0f8029b541230732f7cdcd026e8  /etc/systemd/system/patriotpot-egress-firewall.service
+-- iptables OUTPUT chain --
+Chain PATRIOTPOT_EGRESS (1 references)
+ pkts bytes target     prot opt in     out     source               destination         
+69365   15M ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+    0     0 ACCEPT     all  --  *      lo      0.0.0.0/0            0.0.0.0/0           
+ 5701  494K ACCEPT     udp  --  *      *       0.0.0.0/0            10.0.0.2             udp dpt:53 ctstate NEW
+    0     0 ACCEPT     tcp  --  *      *       0.0.0.0/0            10.0.0.2             tcp dpt:53 ctstate NEW
+ 4036  242K ACCEPT     tcp  --  *      *       0.0.0.0/0            169.254.169.254      tcp dpt:80 ctstate NEW
+ 6655  506K ACCEPT     udp  --  *      *       0.0.0.0/0            169.254.169.123      udp dpt:123 ctstate NEW
+    0     0 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/8           
+ 3837 1259K DROP       all  --  *      *       0.0.0.0/0            10.0.0.0/8          
+    0     0 DROP       all  --  *      *       0.0.0.0/0            100.64.0.0/10       
+    0     0 DROP       all  --  *      *       0.0.0.0/0            127.0.0.0/8         
+    0     0 DROP       all  --  *      *       0.0.0.0/0            169.254.0.0/16      
+    0     0 DROP       all  --  *      *       0.0.0.0/0            172.16.0.0/12       
+    0     0 DROP       all  --  *      *       0.0.0.0/0            192.0.0.0/24        
+    0     0 DROP       all  --  *      *       0.0.0.0/0            192.0.2.0/24        
+    0     0 DROP       all  --  *      *       0.0.0.0/0            192.168.0.0/16      
+    0     0 DROP       all  --  *      *       0.0.0.0/0            198.18.0.0/15       
+    0     0 DROP       all  --  *      *       0.0.0.0/0            198.51.100.0/24     
+    0     0 DROP       all  --  *      *       0.0.0.0/0            203.0.113.0/24      
+    0     0 DROP       all  --  *      *       0.0.0.0/0            224.0.0.0/4         
+    0     0 DROP       all  --  *      *       0.0.0.0/0            240.0.0.0/4         
+ 2423  145K ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 80,443 ctstate NEW
+ 424K   32M DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+iptables: No chain/target/match by that name.
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination         
+ 516K   50M PATRIOTPOT_EGRESS  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+-- ip6tables OUTPUT chain --
+Chain PATRIOTPOT_EGRESS_V6 (1 references)
+ pkts bytes target     prot opt in     out     source               destination         
+    0     0 ACCEPT     all      *      *       ::/0                 ::/0                 ctstate RELATED,ESTABLISHED
+    0     0 ACCEPT     all      *      lo      ::/0                 ::/0                
+  939 98535 DROP       all      *      *       ::/0                 ::/0                
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination         
+  939 98535 PATRIOTPOT_EGRESS_V6  all      *      *       ::/0                 ::/0                
+##### SECTION7_ARTIFACT_HASHES #####
+200e61b5c18c96279aee5909b93114474de01b59bb4b38692474594a395e4862  /opt/cowrie/etc/cowrie.cfg
+6d420c2099ed444581bdc4cfd4cc69a4e169a7c5174032ef88917e08fe91087e  /opt/cowrie/etc/userdb.txt
+aabdb61b03b6486e778561fd624ff143d111bd1d218ec5672b81c633b46d2c4c  /opt/cowrie/honeyfs/etc/passwd
+9e0c02bd77c06deccb6b028ae21dd48e451d9d90c1d3e2d5b36daf1fcfcda4f4  /opt/cowrie/honeyfs/home/admin/passwords.txt
+12ab3fc30374985bbc73015ca0359f0b3a4dcb6dd209bcc182d3a9d0075d1685  /opt/cowrie/share/cowrie/txtcmds/bin/netstat
+84072fad2ecf8939f1fda1a38ee8433e4555682be82210ff6ec5f180452ed3b3  /opt/cowrie/share/cowrie/txtcmds/bin/ps
+ee2d62fe0cc0ed88d6180b30c5cf19611d481432aea058977ea88fe07ee918b9  /usr/local/libexec/install-cowrie-host-key.py
+a8606b55fad0ba9e403f690f86e1d4c1eb52b3f36c162369f0266343ce9930d9  /usr/local/libexec/patriotpot-discord-monitor.py
+1b8089d405e1766e3e1182c1d26cd0de66d35bd0205965b62979b9699a2d2b54  /usr/local/libexec/patriotpot-s3-archive.py
+77057b6c86189dcc153ddfeb50c00e6fd3165711e7a6ddff121241a73c6fb7de  /etc/systemd/system/cowrie.service
+2b1d2ab3769602c4f1f3c008f6fab8b2dd063b5afb9091d1813a0daed28bcad4  /etc/systemd/system/patriotpot-discord.service
+0e1167ceb9f2c546ba5ba3a0c1e98b78e6b8625eee6d963d16de5692b757e839  /usr/local/libexec/patriotpot-egress-firewall
+11d9124d1390bd44985cb6884e032b80979ac0f8029b541230732f7cdcd026e8  /etc/systemd/system/patriotpot-egress-firewall.service
+295335375980bc3d1981c4fb3f4a2a2d66c2ae36a439b99a2e7b65526c83e281  /etc/systemd/system/patriotpot-archive.service
+a407c90e568d357a7c937fc08306a412f1607d64076b3dac01c954a1a5e66129  /etc/systemd/system/patriotpot-archive.timer
+e683e452cc9e461c61fa8ab76f454a95bd9920198406693aad6f713cd7a2ee30  /etc/logrotate.d/patriotpot
+d793095dd9fa5a499029034c0a77f1dce91a68574694a36c74e4ac6a257de857  /opt/aws/amazon-cloudwatch-agent/etc/patriotpot.json
+06f0ed527bdc133b3fabca5def3db084b120bdf6b8e47736a85cd12e98b36da9  /opt/cowrie/share/cowrie/fs.pickle
+-- asset dir contents (bootstrap staging) --
+total 132
+drwxr-x---   2 root root  4096 Sep 16 20:04 .
+drwxr-xr-x. 10 root root   162 Sep 16 23:38 ..
+-rw-r-----   1 root root   269 Sep 16 20:04 archive-requirements.lock
+-rwxr-x---   1 root root 18513 Sep 16 20:03 bootstrap-native.sh
+-rw-r-----   1 root root  1808 Sep 16 20:04 cloudwatch-agent.json
+-rw-r-----   1 root root  1335 Sep 16 20:04 cowrie.cfg
+-rw-r-----   1 root root   827 Sep 16 20:04 cowrie-requirements.lock
+-rw-r-----   1 root root   965 Sep 16 20:04 cowrie.service
+-rw-r-----   1 root root 14414 Sep 16 20:04 discord-monitor.py
+-rw-r-----   1 root root   237 Sep 16 20:04 honeyfs-etc-passwd
+-rw-r-----   1 root root   108 Sep 16 20:04 honeyfs-home-admin-passwords.txt
+-rw-r-----   1 root root  3451 Sep 16 20:04 install-host-key.py
+-rw-r-----   1 root root   643 Sep 16 20:04 patriotpot-archive.service
+-rw-r-----   1 root root   223 Sep 16 20:04 patriotpot-archive.timer
+-rw-r-----   1 root root   699 Sep 16 20:04 patriotpot-discord.service
+-rw-r-----   1 root root   590 Sep 16 20:04 patriotpot-logrotate
+-rw-r-----   1 root root 29576 Sep 16 20:04 s3-archive.py
+-rw-r-----   1 root root   342 Sep 16 20:04 txtcmds-bin-netstat
+-rw-r-----   1 root root   181 Sep 16 20:04 txtcmds-bin-ps
+-rw-r-----   1 root root   113 Sep 16 20:04 userdb.txt
+##### SECTION8_COWRIE_CONFIG #####
+hostname = gmu-server
+backend = shell
+version = SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2
+listen_endpoints = tcp:2222:interface=0.0.0.0
+filesystem = /opt/cowrie/share/cowrie/fs.pickle
+backend = shell
+enabled = false
+[telnet]
+enabled = false
+10 /opt/cowrie/etc/userdb.txt
+root:root:644
+root:root:644
+##### SECTION9_SSH_MGMT #####
+KeyName check performed AWS-side (EC2 API): see baseline doc
+/root/.ssh/authorized_keys size=0 lines=0
+/home/ec2-user/.ssh/authorized_keys size=0 lines=0
+inactive
+masked
+##### SECTION10_DISCORD_MONITOR #####
+a8606b55fad0ba9e403f690f86e1d4c1eb52b3f36c162369f0266343ce9930d9  /usr/local/libexec/patriotpot-discord-monitor.py
+{'version': 2, 'source': {'device': 66305, 'inode': 978800, 'offset': 3067}, 'initialized_at': '2026-09-16T20:07:48Z', 'updated_at': '2026-09-16T23:38:34Z', 'replay_suppressed': 9}
+pending_count 0
+seen_count 9
+-- Logs begin at Wed 2026-09-16 20:03:34 UTC, end at Fri 2026-09-18 05:19:49 UTC. --
+Sep 16 20:07:46 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot local Cowrie JSON Discord monitor.
+Sep 16 23:27:27 ip-10-0-1-246.ec2.internal systemd[1]: Stopping PatriotPot local Cowrie JSON Discord monitor...
+Sep 16 23:27:28 ip-10-0-1-246.ec2.internal systemd[1]: Stopped PatriotPot local Cowrie JSON Discord monitor.
+-- Reboot --
+Sep 16 23:27:52 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot local Cowrie JSON Discord monitor.
+Sep 16 23:38:34 ip-10-0-1-246.ec2.internal systemd[1]: Stopping PatriotPot local Cowrie JSON Discord monitor...
+Sep 16 23:38:34 ip-10-0-1-246.ec2.internal systemd[1]: Stopped PatriotPot local Cowrie JSON Discord monitor.
+Sep 16 23:38:34 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot local Cowrie JSON Discord monitor.
+Sep 18 04:56:45 ip-10-0-1-246.ec2.internal systemd[1]: Stopping PatriotPot local Cowrie JSON Discord monitor...
+Sep 18 04:56:45 ip-10-0-1-246.ec2.internal systemd[1]: Stopped PatriotPot local Cowrie JSON Discord monitor.
+Sep 18 04:56:45 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot local Cowrie JSON Discord monitor.
+##### SECTION11_ARCHIVE_PIPELINE #####
+active
+enabled
+NEXT                         LEFT          LAST                         PASSED  UNIT                     ACTIVATES
+Fri 2026-09-18 05:24:00 UTC  4min 10s left Fri 2026-09-18 05:18:52 UTC  58s ago patriotpot-archive.timer patriotpot-archive.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.
+{"current":{"anchor":{"device":66305,"inode":978800,"offset":3067,"schema":"patriotpot-archive-anchor/v1","sha256":"e951645b5fc2da2b6a2087de67e8d14f5e321e32a1fedd14fd6032e1f87b8725","window_start":3003},"device":66305,"generation":0,"inode":978800,"offset":3067},"lineages":{"66305:978800":{"anchor":{"device":66305,"inode":978800,"offset":3067,"schema":"patriotpot-archive-anchor/v1","sha256":"e951645b5fc2da2b6a2087de67e8d14f5e321e32a1fedd14fd6032e1f87b8725","window_start":3003},"descriptor":{"device":66305,"inode":978800},"generation":0,"offset":3067}},"rotated":{},"updated_at":"2026-09-18T05:18:52Z","uploaded_objects":11,"version":3}
+-rw-r----- 1 cowrie cowrie 3067 Sep 16 23:27 /opt/cowrie/var/log/cowrie/cowrie.json
+size=3067 inode=978800
+-- Logs begin at Wed 2026-09-16 20:03:34 UTC, end at Fri 2026-09-18 05:19:49 UTC. --
+Sep 18 04:36:52 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot independent immutable S3 evidence archive.
+Sep 18 04:42:52 ip-10-0-1-246.ec2.internal systemd[1]: Starting PatriotPot independent immutable S3 evidence archive...
+Sep 18 04:42:52 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot independent immutable S3 evidence archive.
+Sep 18 04:48:52 ip-10-0-1-246.ec2.internal systemd[1]: Starting PatriotPot independent immutable S3 evidence archive...
+Sep 18 04:48:52 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot independent immutable S3 evidence archive.
+Sep 18 04:54:52 ip-10-0-1-246.ec2.internal systemd[1]: Starting PatriotPot independent immutable S3 evidence archive...
+Sep 18 04:54:52 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot independent immutable S3 evidence archive.
+Sep 18 05:00:52 ip-10-0-1-246.ec2.internal systemd[1]: Starting PatriotPot independent immutable S3 evidence archive...
+Sep 18 05:00:52 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot independent immutable S3 evidence archive.
+Sep 18 05:06:47 ip-10-0-1-246.ec2.internal systemd[1]: Starting PatriotPot independent immutable S3 evidence archive...
+Sep 18 05:06:48 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot independent immutable S3 evidence archive.
+Sep 18 05:12:49 ip-10-0-1-246.ec2.internal systemd[1]: Starting PatriotPot independent immutable S3 evidence archive...
+Sep 18 05:12:50 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot independent immutable S3 evidence archive.
+Sep 18 05:18:52 ip-10-0-1-246.ec2.internal systemd[1]: Starting PatriotPot independent immutable S3 evidence archive...
+Sep 18 05:18:52 ip-10-0-1-246.ec2.internal systemd[1]: Started PatriotPot independent immutable S3 evidence archive.
+##### SECTION12_LOGGING_TELEMETRY #####
+active
+-- error scan (discord) --
+0
+-- error scan (archive) --
+0
+-- error scan (egress firewall) --
+0
+-- restart counts --
+cowrie.service: 3
+patriotpot-discord.service: 4
+patriotpot-archive.service: 341
+patriotpot-egress-firewall.service: 3
+##### SECTION13_HOST_HEALTH #####
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p1   16G  2.9G   14G  18% /
+              total        used        free      shared  buff/cache   available
+Mem:            940         225         143           0         571         568
+Swap:             0           0           0
+ 05:19:50 up 1 day,  5:52,  0 users,  load average: 0.00, 0.00, 0.00
+0 loaded units listed. Pass --all to see loaded but inactive units, too.
+To show all installed unit files use 'systemctl list-unit-files'.
+
