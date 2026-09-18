@@ -342,7 +342,7 @@ Resources:
         - Key: Name
           Value: !Sub 'patriotpot-sg-${Environment}'
         - Key: Exposure
-          Value: disabled
+          Value: live-control-tcp-2222
 
   # ---------------------------------------------------------------------------
   # CloudWatch is an operational copy; local JSON and S3 remain authoritative.
@@ -510,7 +510,7 @@ Resources:
         - Key: Runtime
           Value: native
         - Key: Exposure
-          Value: disabled
+          Value: live-control-tcp-2222
 
   # Applies the two content-addressed firewall assets through SSM without an
   # instance replacement and without an inbound path.  It has no schedule:
@@ -619,18 +619,19 @@ Resources:
         - Key: Name
           Value: !Sub 'patriotpot-eip-${Environment}'
         - Key: Exposure
-          Value: disabled
+          Value: live-control-tcp-2222
 
 Outputs:
   ControlElasticIp:
     Description: >
-      Preserved Elastic IP allocation. PRE-EXPOSURE: the attached security group
-      has zero IPv4 and IPv6 ingress rules; this is not an attacker endpoint.
+      Preserved Elastic IP allocation. LIVE CONTROL (Exposure Gate E1): the
+      attached security group exposes exactly TCP/2222 (Cowrie) from 0.0.0.0/0;
+      no other inbound port is open.
     Value: !Ref PatriotPotEIP
 
   ExposureState:
     Description: Network exposure gate
-    Value: NO_INGRESS_SSM_ONLY
+    Value: LIVE_CONTROL_TCP_2222_ONLY
 
   EvidenceBucketName:
     Description: Versioned S3 bucket for independent content-addressed evidence

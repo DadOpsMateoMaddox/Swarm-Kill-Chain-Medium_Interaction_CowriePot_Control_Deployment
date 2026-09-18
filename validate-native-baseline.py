@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static and self-test validation for the native pre-exposure baseline."""
+"""Static and self-test validation for the native control baseline (LIVE CONTROL invariants; see Exposure Gate E1)."""
 
 from __future__ import annotations
 
@@ -71,10 +71,26 @@ def validate_template() -> None:
         "KeyPairName",
     ):
         require(forbidden not in text, f"forbidden template declaration: {forbidden}")
-    require("SecurityGroupIngress:" not in text, "template declares ingress")
+    # Exposure Gate E1 (LIVE CONTROL): the template now declares exactly one
+    # inbound rule, TCP/2222 from 0.0.0.0/0, for the Cowrie listener. TCP/22
+    # and TCP/2223 remain hard-prohibited everywhere in the template.
+    require(text.count("SecurityGroupIngress:") == 1, "template must declare exactly one SecurityGroupIngress block")
+    ingress_start = text.find("SecurityGroupIngress:")
+    ingress_end = text.find("SecurityGroupEgress:", ingress_start)
+    require(ingress_end != -1, "malformed template: SecurityGroupEgress not found after SecurityGroupIngress")
+    ingress_block = text[ingress_start:ingress_end]
     require(
-        not re.search(r"(?m)^\s*(FromPort|ToPort):\s*(22|2222|2223)\s*$", text),
-        "template declares a prohibited inbound port",
+        "IpProtocol: tcp" in ingress_block
+        and "FromPort: 2222" in ingress_block
+        and "ToPort: 2222" in ingress_block
+        and "CidrIp: 0.0.0.0/0" in ingress_block,
+        "SecurityGroupIngress must expose exactly TCP/2222 from 0.0.0.0/0 (Exposure Gate E1)",
+    )
+    require(ingress_block.count("IpProtocol:") == 1, "SecurityGroupIngress must declare exactly one rule")
+    require("CidrIpv6" not in ingress_block, "SecurityGroupIngress must not declare IPv6 ingress")
+    require(
+        not re.search(r"(?m)^\s*(FromPort|ToPort):\s*(22|2223)\s*$", text),
+        "template declares a prohibited inbound port (22 or 2223)",
     )
     for required in (
         "CreationPolicy:",
@@ -92,7 +108,7 @@ def validate_template() -> None:
         "Description: !Sub 'patriotpot-native-bootstrap-${BootstrapBundleId}'",
         '--reason "$failure_reason"',
         "ExposureState:",
-        "NO_INGRESS_SSM_ONLY",
+        "LIVE_CONTROL_TCP_2222_ONLY",
         "FirewallBundleId:",
         "FirewallScriptSha256:",
         "FirewallUnitSha256:",
