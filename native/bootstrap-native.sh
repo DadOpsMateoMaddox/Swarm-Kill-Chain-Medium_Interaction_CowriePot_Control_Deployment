@@ -38,7 +38,7 @@ trap 'record_failure_phase $?' EXIT
 read -r -d '' ASSET_HASHES <<'EOF' || true
 65ba7f77c4fa17e77f7fee3ad0510b510f862b88e46f53a6b266c23dfb7afb3a  archive-requirements.lock
 4dcc0dfe4b652ab4647f6d2fe992de0bebaedbd09f64dbe284b157545fb232b5  cowrie-requirements.lock
-3def0b3369af051e7f6ac53207ca40989b0763eae974c32bdfe9a1d6a7acc8b5  discord-monitor.py
+a8606b55fad0ba9e403f690f86e1d4c1eb52b3f36c162369f0266343ce9930d9  discord-monitor.py
 1b8089d405e1766e3e1182c1d26cd0de66d35bd0205965b62979b9699a2d2b54  s3-archive.py
 ee2d62fe0cc0ed88d6180b30c5cf19611d481432aea058977ea88fe07ee918b9  install-host-key.py
 77057b6c86189dcc153ddfeb50c00e6fd3165711e7a6ddff121241a73c6fb7de  cowrie.service
@@ -54,7 +54,7 @@ aabdb61b03b6486e778561fd624ff143d111bd1d218ec5672b81c633b46d2c4c  honeyfs-etc-pa
 9e0c02bd77c06deccb6b028ae21dd48e451d9d90c1d3e2d5b36daf1fcfcda4f4  honeyfs-home-admin-passwords.txt
 12ab3fc30374985bbc73015ca0359f0b3a4dcb6dd209bcc182d3a9d0075d1685  txtcmds-bin-netstat
 84072fad2ecf8939f1fda1a38ee8433e4555682be82210ff6ec5f180452ed3b3  txtcmds-bin-ps
-5add43e60ecc9424f0e2bce43d52c3ce63c880270369a2da10618be1b84bea88  patriotpot-egress-firewall.sh
+0e1167ceb9f2c546ba5ba3a0c1e98b78e6b8625eee6d963d16de5692b757e839  patriotpot-egress-firewall.sh
 EOF
 
 required_environment=(

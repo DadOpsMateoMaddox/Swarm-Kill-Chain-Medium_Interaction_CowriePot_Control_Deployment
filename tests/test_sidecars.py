@@ -73,10 +73,18 @@ class DiscordMonitorTests(unittest.TestCase):
     def test_first_observation_initializes_at_eof(self):
         state = discord.default_state()
         status = SimpleNamespace(st_dev=1, st_ino=2, st_size=91)
+
+        def fake_consume(path, state_arg, start, credentials):
+            state_arg["source"]["offset"] = 91
+            return 91
+
         with mock.patch.object(discord, "regular_stat", return_value=status), mock.patch.object(
             discord, "save_state"
-        ) as save, mock.patch.object(discord, "drain_pending"):
+        ) as save, mock.patch.object(discord, "drain_pending"), mock.patch.object(
+            discord, "consume", side_effect=fake_consume
+        ) as consume:
             discord.poll_once(state, self.credentials)
+        consume.assert_called_once_with(discord.LOG_PATH, state, 0, self.credentials)
         self.assertEqual(state["source"]["offset"], 91)
         save.assert_called_once()
 
@@ -88,7 +96,7 @@ class DiscordMonitorTests(unittest.TestCase):
             discord, "consume", return_value=80
         ) as consume, mock.patch.object(discord, "drain_pending"):
             discord.poll_once(state, self.credentials)
-        consume.assert_called_once_with(discord.LOG_PATH, state, 40)
+        consume.assert_called_once_with(discord.LOG_PATH, state, 40, self.credentials)
 
     def test_rename_rotation_drains_old_inode_then_new(self):
         state = discord.default_state()
@@ -101,8 +109,8 @@ class DiscordMonitorTests(unittest.TestCase):
             discord, "save_state"
         ), mock.patch.object(discord, "drain_pending"):
             discord.poll_once(state, self.credentials)
-        self.assertEqual(consume.call_args_list[0], mock.call(old_path, state, 40))
-        self.assertEqual(consume.call_args_list[1], mock.call(discord.LOG_PATH, state, 0))
+        self.assertEqual(consume.call_args_list[0], mock.call(old_path, state, 40, self.credentials))
+        self.assertEqual(consume.call_args_list[1], mock.call(discord.LOG_PATH, state, 0, self.credentials))
 
     def test_copytruncate_resets_offset(self):
         state = discord.default_state()
@@ -114,7 +122,7 @@ class DiscordMonitorTests(unittest.TestCase):
             discord, "drain_pending"
         ):
             discord.poll_once(state, self.credentials)
-        consume.assert_called_once_with(discord.LOG_PATH, state, 0)
+        consume.assert_called_once_with(discord.LOG_PATH, state, 0, self.credentials)
 
     def test_partial_line_is_not_consumed(self):
         state = discord.default_state()
@@ -125,7 +133,7 @@ class DiscordMonitorTests(unittest.TestCase):
         ), mock.patch.object(discord, "save_state"), mock.patch.object(
             discord, "queue_line"
         ) as queue:
-            offset = discord.consume(Path("cowrie.json"), state, 0)
+            offset = discord.consume(Path("cowrie.json"), state, 0, self.credentials)
         self.assertEqual(offset, len(b'{"eventid":"complete"}\n'))
         queue.assert_called_once()
 

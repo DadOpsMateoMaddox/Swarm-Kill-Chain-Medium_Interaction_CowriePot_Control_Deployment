@@ -172,7 +172,13 @@ def safe_value(value: object, default: str = "N/A") -> str:
 
 
 def format_alert(event: Dict[str, object]) -> Dict[str, object]:
-    """Preserve the strongest recovered 2025 event and payload semantics."""
+    """Preserve the strongest recovered 2025 event and payload semantics.
+
+    Considered event classes, per the recovered 2025 default: cowrie.login.success,
+    cowrie.command.input, and cowrie.session.file_download / file_upload are
+    alerted. cowrie.login.failed is deliberately not alerted; see the
+    unsupported_event branch below.
+    """
     eventid = safe_value(event.get("eventid"), "unknown")
     source_ip = safe_value(event.get("src_ip"), "unknown")
     if eventid == "cowrie.login.success":
@@ -313,6 +319,8 @@ def queue_line(state: Dict[str, object], raw_line: bytes) -> None:
     digest = hashlib.sha256(raw_line).hexdigest()
     seen = state["seen"]
     pending = state["pending"]
+    if digest in seen or any(item["id"] == digest for item in pending):
+        return
     try:
         event = json.loads(raw_line.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -439,6 +447,7 @@ def poll_once(state: Dict[str, object], credentials: CredentialCache) -> None:
         state["initialized_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         save_state(state)
         LOGGER.info("initialized_at_start offset=0")
+        source = state["source"]
 
     old_identity = (int(source["device"]), int(source["inode"]))
     new_identity = (stat_result.st_dev, stat_result.st_ino)
@@ -486,10 +495,7 @@ def main() -> None:
         self_test()
         return
     require_read_only_source()
-    # The recovered monitor began at byte zero on every process start. State
-    # remains process-local so restarts retain that historically observed
-    # replay behavior rather than inventing durable deduplication.
-    state = default_state()
+    state = load_state()
     credentials = CredentialCache()
     LOGGER.info("monitor_started source=%s state=%s", LOG_PATH, STATE_PATH)
     webhook = credentials.get(force=True)
