@@ -1,9 +1,10 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  PatriotPot 2026 pre-exposure native control sensor. Official pinned Amazon
+  PatriotPot 2026 native control sensor. Official pinned Amazon
   Linux 2, side-by-side CPython 3.8, Cowrie v2.5.0, systemd, local JSON,
   independent S3 evidence archival, CloudWatch operations, and SSM-only
-  management. This template declares no inbound security-group rules.
+  management. Exposure Gate E1: this template declares exactly one inbound
+  security-group rule, TCP/2222 from 0.0.0.0/0, for the Cowrie listener.
 
 Parameters:
   HostAmiId:
@@ -306,6 +307,14 @@ Resources:
       # Effective policy is zero ingress; tags and validation carry that state.
       GroupDescription: PatriotPot 2026 honeypot - attacker-facing ports only; no management SSH
       VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # Exposure Gate E1: the sole intended attacker-facing ingress. Cowrie
+        # listens locally on TCP/2222; no other port is opened here.
+        - IpProtocol: tcp
+          FromPort: 2222
+          ToPort: 2222
+          CidrIp: 0.0.0.0/0
+          Description: Cowrie attacker-facing SSH listener (Exposure Gate E1)
       SecurityGroupEgress:
         # The VPC declaration is 10.0.0.0/16.  AmazonProvidedDNS is VPC+2,
         # therefore the only resolver address is objectively 10.0.0.2/32.
