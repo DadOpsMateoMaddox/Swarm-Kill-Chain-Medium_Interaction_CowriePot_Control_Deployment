@@ -1,0 +1,37 @@
+== cowrie service ==
+active
+== listeners ==
+LISTEN 0      50           0.0.0.0:2222      0.0.0.0:*    users:(("twistd",pid=2307,fd=8)) 
+== sshd ==
+inactive
+masked
+== egress firewall ==
+active
+enabled
+0e1167ceb9f2c546ba5ba3a0c1e98b78e6b8625eee6d963d16de5692b757e839  /usr/local/libexec/patriotpot-egress-firewall
+== discord monitor ==
+active
+a8606b55fad0ba9e403f690f86e1d4c1eb52b3f36c162369f0266343ce9930d9  /usr/local/libexec/patriotpot-discord-monitor.py
+discord_state {'source': {'device': 66305, 'inode': 978800, 'offset': 3067}, 'initialized_at': '2026-09-16T20:07:48Z', 'updated_at': '2026-09-16T23:38:34Z', 'replay_suppressed': 9} pending 0 seen 9
+== archive timer/state ==
+active
+archive_state device 66305 inode 978800 offset 3067 uploaded_objects 11
+== cowrie.json current size/inode (informational only, not touched) ==
+size=3067 inode=978800
+== cloudwatch agent ==
+active
+== ssm agent ==
+active
+== recent cowrie journal (last 10, check for new connections) ==
+-- Logs begin at Wed 2026-09-16 20:03:34 UTC, end at Fri 2026-09-18 05:46:52 UTC. --
+Sep 16 23:27:55 ip-10-0-1-246.ec2.internal twistd[2307]: b"cast128-ctr": (algorithms.CAST5, 16, modes.CTR),
+Sep 16 23:27:55 ip-10-0-1-246.ec2.internal twistd[2307]: 2026-09-16T23:27:55+0000 [-] Python Version 3.8.20 (default, Sep 16 2026, 20:05:50) [GCC 7.3.1 20180712 (Red Hat 7.3.1-18)]
+Sep 16 23:27:55 ip-10-0-1-246.ec2.internal twistd[2307]: 2026-09-16T23:27:55+0000 [-] Twisted Version 22.10.0
+Sep 16 23:27:55 ip-10-0-1-246.ec2.internal twistd[2307]: 2026-09-16T23:27:55+0000 [-] Cowrie Version 2.5.0
+Sep 16 23:27:55 ip-10-0-1-246.ec2.internal twistd[2307]: 2026-09-16T23:27:55+0000 [-] Loaded output engine: jsonlog
+Sep 16 23:27:55 ip-10-0-1-246.ec2.internal twistd[2307]: 2026-09-16T23:27:55+0000 [twisted.scripts._twistd_unix.UnixAppLogger#info] twistd 22.10.0 (/opt/cowrie/venv/bin/python 3.8.20) starting up.
+Sep 16 23:27:55 ip-10-0-1-246.ec2.internal twistd[2307]: 2026-09-16T23:27:55+0000 [twisted.scripts._twistd_unix.UnixAppLogger#info] reactor class: twisted.internet.epollreactor.EPollReactor.
+Sep 16 23:27:55 ip-10-0-1-246.ec2.internal twistd[2307]: 2026-09-16T23:27:55+0000 [-] CowrieSSHFactory starting on 2222
+Sep 16 23:27:55 ip-10-0-1-246.ec2.internal twistd[2307]: 2026-09-16T23:27:55+0000 [cowrie.ssh.factory.CowrieSSHFactory#info] Starting factory <cowrie.ssh.factory.CowrieSSHFactory object at 0x7fb11d4e1d30>
+Sep 16 23:27:55 ip-10-0-1-246.ec2.internal twistd[2307]: 2026-09-16T23:27:55+0000 [-] Ready to accept SSH connections
+

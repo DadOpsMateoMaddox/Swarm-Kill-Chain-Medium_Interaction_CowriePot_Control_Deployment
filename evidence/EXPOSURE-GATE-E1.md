@@ -92,6 +92,99 @@ Full `AFTER` `SecurityGroupIngress` array has exactly one entry. Confirmed absen
 - No file under `native/`, no systemd unit, no Cowrie config, no bootstrap script was modified.
 - `discord-monitor.py` and `patriotpot-egress-firewall.sh` hashes, the H1 change set, and the baseline capture are all unaffected — this gate's only content change is the CloudFormation template's `PatriotPotSecurityGroup.Properties.SecurityGroupIngress` and its top-level `Description` string (updated to stop misdescribing the template as declaring "no inbound security-group rules," which this exact change makes false).
 
-# EXPOSURE GATE E1 — CHANGE SET READY FOR HUMAN REVIEW
+## Change-set review status (superseded below — see Execution)
 
-Change set `exposure-gate-e1-20260918` (`3b527657-36d4-461a-8cf0-a85c497b3467`) has reached `CREATE_COMPLETE` / `ExecutionStatus: AVAILABLE`. **Not executed.** No live AWS state has changed. Stopping here per instruction.
+Change set `exposure-gate-e1-20260918` (`3b527657-36d4-461a-8cf0-a85c497b3467`) reached `CREATE_COMPLETE` / `ExecutionStatus: AVAILABLE` and was reviewed above. Execution was approved separately, under the mandatory pre-execution recheck documented next.
+
+---
+
+# Execution
+
+## Mandatory pre-execution recheck (immediately before `execute-change-set`)
+
+| Condition | Required | Observed | Result |
+|---|---|---|---|
+| Change-set ID | `3b527657-36d4-461a-8cf0-a85c497b3467` | `3b527657-36d4-461a-8cf0-a85c497b3467` | MATCH |
+| Status | `CREATE_COMPLETE` | `CREATE_COMPLETE` | MATCH |
+| ExecutionStatus | `AVAILABLE` | `AVAILABLE` | MATCH |
+| Resource inventory | exactly `PatriotPotSecurityGroup` Modify, Replacement=False | exactly `PatriotPotSecurityGroup` Modify, Replacement=False | MATCH |
+| AFTER ingress | `tcp 2222→2222 0.0.0.0/0` | `{"CidrIp":"0.0.0.0/0","FromPort":2222,"ToPort":2222,"IpProtocol":"tcp",...}` | MATCH |
+| Live SG ingress before execution | `[]` | `[]` | MATCH |
+
+All six conditions held. Proceeded to execution: the exact reviewed change set, not recreated, template not modified, `Exposure=disabled` tag not touched, no other resource altered.
+
+## Execution record
+
+| Event | UTC timestamp |
+|---|---|
+| `execute-change-set` requested | `2026-09-18T05:44:40Z` |
+| `PatriotPotSecurityGroup` `UPDATE_IN_PROGRESS` | `2026-09-18T05:44:46.824Z` |
+| **`PatriotPotSecurityGroup` `UPDATE_COMPLETE` — T0** | **`2026-09-18T05:44:48.481Z`** |
+| `PatriotPotEIP` `UPDATE_COMPLETE` (see note below) | `2026-09-18T05:44:51.331Z` |
+| Stack `UPDATE_COMPLETE` (overall) | `2026-09-18T05:44:53.245Z` |
+
+**T0 = `2026-09-18T05:44:48.481Z`** — the SG's own completion, not the later overall-stack timestamp, per instruction.
+
+**`PatriotPotEIP` UPDATE event — investigated, confirmed benign, not a real mutation.** The EIP resource has no template dependency on `PatriotPotSecurityGroup` (`gmu-honeypot-stack-2026-control.yaml:612-622` — its only inputs are `InstanceId: !Ref PatriotPotInstanceV2` and static tags). Its `ResourceProperties` in this execution's `UPDATE_COMPLETE` event (`{"InstanceId":"i-00270aeefb6266a7b","Domain":"vpc","Tags":[...]}`) are byte-identical to the same event captured during Gate H1's execution. Live `describe-addresses` post-execution confirms identical `AllocationId` (`eipalloc-0de839802f07b5a62`), `AssociationId` (`eipassoc-0a00db434fa29cbb7`), `PublicIp` (`13.217.73.134`), and `InstanceId`. This is CloudFormation's routine no-op reconciliation touch on `AWS::EC2::EIP` during any stack update — observed identically in H1 — not a property change.
+
+## Post-execution validation
+
+**1. CloudFormation:** `UPDATE_COMPLETE`, no rollback, stack events show only `PatriotPotSecurityGroup` and the benign `PatriotPotEIP` touch — no unexpected resource events. **PASS**
+
+**2. `PatriotPotSecurityGroup`:** same physical ID `sg-0647129753848a7b0`. Full post-execution rule set captured at `evidence/exposure-gate-e1-execution/sg-post-execution.json`:
+```
+Ingress: exactly one rule — tcp, 2222→2222, 0.0.0.0/0, "Cowrie attacker-facing SSH listener (Exposure Gate E1)"
+Ipv6Ranges: [] (no IPv6 ingress)
+Egress: unchanged — 4 rules (DNS 53/udp+tcp → 10.0.0.2/32, HTTP 80/tcp, HTTPS 443/tcp → 0.0.0.0/0)
+```
+**PASS**
+
+**3. Explicitly confirmed absent from the live SG:** TCP/22, TCP/2223, TCP/111, UDP/111, any other port, any `::/0` entry. The `IpPermissions` array has exactly one element; nothing else is present. **PASS**
+
+**4. Confirmed unchanged:**
+- SG egress: byte-identical 4 rules (above).
+- NACL: `acl-00cbae2f781c12045`, unchanged.
+- Route table `rtb-094125482392c9dc7`: same 2 routes (`10.0.0.0/16→local`, `0.0.0.0/0→igw-0033bfd6ead475543`).
+- EIP: same allocation/association/public IP (see note above).
+- Instance: `i-00270aeefb6266a7b`, `running`, `LaunchTime` unchanged at `2026-09-16T20:03:27Z` — proves no replacement.
+- ENI: `eni-05699c39be981ea62`, unchanged.
+- IAM instance profile: unchanged ARN.
+- SSM associations: both `Status: Success` / `DetailedStatus: Success` — not re-triggered (SG is not one of their dependencies).
+- **CloudFormation drift, post-execution:** `StackDriftStatus: IN_SYNC`, `DriftedStackResourceCount: 0`.
+**PASS**
+
+**5. On-host** (raw output: `evidence/exposure-gate-e1-execution/onhost-post-execution.txt`):
+- `cowrie.service`: active.
+- `ss -lntp`: only `0.0.0.0:2222` (twistd, pid 2307) — no 22, no 2223.
+- `sshd`: inactive, masked.
+- rpcbind:111 not re-checked this pass (unchanged since baseline; confirmed blocked at the SG layer per §3/§4 above — the SG's `IpPermissions` array contains no rule that could reach it).
+**PASS**
+
+**6. Security controls:**
+- Egress firewall: active, enabled, script hash `0e1167ce...` unchanged.
+- Discord monitor: active, hash `a8606b55...` unchanged.
+- Archive timer: active, `uploaded_objects: 11` — unchanged count, consistent with zero new events.
+- CloudWatch agent: active. SSM agent: active (this validation ran entirely over SSM).
+**PASS**
+
+**7. State continuity — explicitly not reset, no synthetic traffic generated:**
+```
+Discord monitor: source {device: 66305, inode: 978800, offset: 3067}, pending: 0, seen: 9, replay_suppressed: 9 (historical, pre-H1)
+Archive:         device 66305, inode 978800, offset 3067, uploaded_objects: 11
+cowrie.json:     size=3067, inode=978800
+```
+All three identical to the pre-execution baseline and to each other. No `ssh`/`nc`/`nmap`/`Test-NetConnection` or any other operator-originated connection was made to TCP/2222 at any point in this gate. Cowrie's journal shows no connection activity beyond its original 2026-09-16T23:27:55Z startup log lines — zero organic attacker events yet, as expected only ~2 minutes after T0.
+**PASS**
+
+**8. Evidence captured:** this document; `evidence/exposure-gate-e1-execution/sg-post-execution.json` (full SG state); `evidence/exposure-gate-e1-execution/onhost-post-execution.txt` (full on-host diagnostic transcript); CloudFormation event timestamps above; drift-detection result above.
+
+## Known non-blocking metadata debt (recorded, not fixed this gate)
+
+- **E1.1 — exposure metadata / validator transition:** `Exposure=disabled` tag remains stale on both `PatriotPotSecurityGroup` and `PatriotPotEIP` post-execution. `validate-native-baseline.py`'s zero-ingress assertion still fails against the current template — expected, since it was built for the PRE-EXPOSURE invariant this gate deliberately retired. Neither was touched during this execution, per instruction.
+
+# EXPOSURE GATE E1: PASS — LIVE CONTROL
+
+- **T0 (UTC):** `2026-09-18T05:44:48.481Z`
+- **First organic Cowrie event after T0:** none yet observed as of this validation pass (`2026-09-18T05:46:52Z` journal check, ~2 minutes post-T0) — to be recorded separately when it occurs.
+- **No synthetic attacker traffic was generated** at any point in this gate — confirmed by unchanged state-file offsets (§7) and the absence of any operator-originated connection to TCP/2222.
+- **Resulting evidence commit SHA:** recorded after this document is committed (see below).

@@ -1,0 +1,124 @@
+{
+    "SecurityGroups": [
+        {
+            "GroupId": "sg-0647129753848a7b0",
+            "IpPermissionsEgress": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 80,
+                    "ToPort": 80,
+                    "UserIdGroupPairs": [],
+                    "IpRanges": [
+                        {
+                            "Description": "Direct public HTTP only",
+                            "CidrIp": "0.0.0.0/0"
+                        }
+                    ],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                },
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 53,
+                    "ToPort": 53,
+                    "UserIdGroupPairs": [],
+                    "IpRanges": [
+                        {
+                            "Description": "AmazonProvidedDNS TCP fallback derived from VPC CIDR plus two",
+                            "CidrIp": "10.0.0.2/32"
+                        }
+                    ],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                },
+                {
+                    "IpProtocol": "udp",
+                    "FromPort": 53,
+                    "ToPort": 53,
+                    "UserIdGroupPairs": [],
+                    "IpRanges": [
+                        {
+                            "Description": "AmazonProvidedDNS derived from declared VPC CIDR plus two",
+                            "CidrIp": "10.0.0.2/32"
+                        }
+                    ],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                },
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 443,
+                    "ToPort": 443,
+                    "UserIdGroupPairs": [],
+                    "IpRanges": [
+                        {
+                            "Description": "Direct public HTTPS for SSM, S3, CloudWatch, and Discord",
+                            "CidrIp": "0.0.0.0/0"
+                        }
+                    ],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ],
+            "Tags": [
+                {
+                    "Key": "aws:cloudformation:logical-id",
+                    "Value": "PatriotPotSecurityGroup"
+                },
+                {
+                    "Key": "Exposure",
+                    "Value": "disabled"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-name",
+                    "Value": "patriotpot-2026-control-prod"
+                },
+                {
+                    "Key": "Environment",
+                    "Value": "production"
+                },
+                {
+                    "Key": "Project",
+                    "Value": "PatriotPot"
+                },
+                {
+                    "Key": "Control",
+                    "Value": "Control-0"
+                },
+                {
+                    "Key": "Name",
+                    "Value": "patriotpot-sg-production"
+                },
+                {
+                    "Key": "Experiment",
+                    "Value": "SwarmKillChain"
+                },
+                {
+                    "Key": "aws:cloudformation:stack-id",
+                    "Value": "arn:aws:cloudformation:us-east-1:706162601288:stack/patriotpot-2026-control-prod/90c016a0-af23-11f1-8878-0affff84d99f"
+                }
+            ],
+            "VpcId": "vpc-09d6a384845f65344",
+            "SecurityGroupArn": "arn:aws:ec2:us-east-1:706162601288:security-group/sg-0647129753848a7b0",
+            "OwnerId": "706162601288",
+            "GroupName": "patriotpot-2026-control-prod-PatriotPotSecurityGroup-sKBcmjiH7RAl",
+            "Description": "PatriotPot 2026 honeypot - attacker-facing ports only; no management SSH",
+            "IpPermissions": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 2222,
+                    "ToPort": 2222,
+                    "UserIdGroupPairs": [],
+                    "IpRanges": [
+                        {
+                            "Description": "Cowrie attacker-facing SSH listener (Exposure Gate E1)",
+                            "CidrIp": "0.0.0.0/0"
+                        }
+                    ],
+                    "Ipv6Ranges": [],
+                    "PrefixListIds": []
+                }
+            ]
+        }
+    ]
+}
