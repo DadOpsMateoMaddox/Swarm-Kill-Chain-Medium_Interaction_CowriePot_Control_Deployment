@@ -25,7 +25,7 @@
 2. `main()` called `default_state()` instead of `load_state()`, so the durable inode/offset/dedupe state built and unit-tested elsewhere in the file was never actually loaded — every restart replayed the entire Cowrie log to Discord.
 3. `queue_line()` had no de-dupe check against `seen`/`pending`, so a line observed twice before delivery queued two duplicate alerts.
 
-Also corrected: two stale SHA-256 pins in `native/bootstrap-native.sh` (`discord-monitor.py`, `patriotpot-egress-firewall.sh`), and added an explicit source comment documenting the intentionally-excluded `cowrie.login.failed` / `cowrie.session.file_download` event classes (validator traceability requirement).
+Also corrected: two stale SHA-256 pins in `native/bootstrap-native.sh` (`discord-monitor.py`, `patriotpot-egress-firewall.sh`), and added an explicit source comment documenting the recovered event catalogue: `cowrie.login.success`, `cowrie.command.input`, and `cowrie.session.file_download`/`file_upload` are alerted; `cowrie.login.failed` is the one intentionally-excluded class (validator traceability requirement).
 
 Fix commit: `9dd19da` "Fix Gate H1 monitor state handling and artifact hashes" — `main` == `origin/main` at time of sign-off. `origin/CerberusInit` held at `25b4047` per instruction, to be retired after baseline capture.
 

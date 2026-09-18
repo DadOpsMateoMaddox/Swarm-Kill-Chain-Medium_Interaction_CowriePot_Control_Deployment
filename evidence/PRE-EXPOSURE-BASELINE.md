@@ -59,6 +59,8 @@ Twisted 22.10.0
 NTP enabled: yes / NTP synchronized: yes (reference 169.254.169.123, Amazon Time Sync, stratum 4)
 ```
 
+**Deliberate control limitation, recorded not remediated:** `/etc/os-release` reports `SUPPORT_END="2026-06-30"` — Amazon Linux 2's mainstream support window has passed. Control-0 is deliberately not upgraded or migrated: its scientific purpose is longitudinal fidelity to the 2025 baseline, and platform churn would break that comparison. This is an accepted, documented constraint of the control sensor specifically. Any future non-control sensor should use a currently-supported platform.
+
 **PASS**
 
 ## 4. Service state
@@ -69,7 +71,7 @@ NTP enabled: yes / NTP synchronized: yes (reference 169.254.169.123, Amazon Time
 | `patriotpot-discord.service` | active | enabled | PID 10617, up since 2026-09-18T04:56:45Z (H1 restart) |
 | `patriotpot-egress-firewall.service` | active | enabled | `Type=oneshot, RemainAfterExit=yes` — MainPID=0 is expected (applies iptables rules once, no daemon) |
 | `patriotpot-archive.service` | inactive | static | Expected — timer-triggered oneshot, not meant to run continuously |
-| `patriotpot-archive.timer` | active | enabled | Firing every ~6 minutes |
+| `patriotpot-archive.timer` | active | enabled | Timer-driven ~5–6 minute cadence |
 | `amazon-cloudwatch-agent.service` | active | enabled | PID 2032 |
 | `amazon-ssm-agent.service` | active | enabled | PID 2295 |
 
@@ -80,7 +82,7 @@ NTP enabled: yes / NTP synchronized: yes (reference 169.254.169.123, Amazon Time
 ```
 tcp LISTEN 0.0.0.0:2222   twistd (pid=2307)   <- Cowrie, expected sole externally-relevant listener
 tcp LISTEN 127.0.0.1:25   master (postfix)    <- loopback only, stock AL2 default, not externally reachable
-tcp LISTEN 0.0.0.0:111 / [::]:111  rpcbind    <- stock AL2 default; SG has zero ingress so unreachable externally
+tcp LISTEN 0.0.0.0:111 / [::]:111  rpcbind    <- stock AL2 default; SG has zero ingress so unreachable externally (carry into Exposure Gate: see notes below)
 udp various (dhclient, rpcbind, chronyd)      <- stock AL2 defaults, loopback/link-local
 ```
 
@@ -152,7 +154,7 @@ Matches expected state exactly: no SSH key exists on Control-0, SSM is the sole 
 
 ## 11. Archive / evidence pipeline baseline
 
-- `patriotpot-archive.timer`: active, enabled, firing every ~6 minutes (last: 58s before capture, next: 4m10s after).
+- `patriotpot-archive.timer`: active, enabled, timer-driven ~5–6 minute cadence (last: 58s before capture, next: 4m10s after — an observed interval of ~5m8s).
 - `patriotpot-archive.service`: `inactive`/`static` between runs — expected for a timer-triggered oneshot. Its restart count (341 over ~29.9 hours of uptime) is the **normal cumulative trigger count** for a ~6-minute period, not a crash loop — corroborated by zero errors in its journal (section 12).
 - Archive state: `{"current":{"anchor":{...,"offset":3067,"sha256":"e951645b...","window_start":3003},...},"uploaded_objects":11,"version":3}` — **11 objects already successfully uploaded** to S3, direct evidence the conditional-create/exact-version-GET pipeline is functioning end-to-end.
 - `cowrie.json`: size 3067 bytes, inode 978800 — **identical offset** to both the Discord monitor's and the archiver's persisted state, confirming both pipelines are caught up to current EOF with no live traffic pending.
@@ -212,6 +214,23 @@ DriftedStackResourceCount: 0
 | No unexplained runtime errors | PASS |
 | Host health nominal | PASS |
 
+## Notes carried into the Exposure Gate
+
+These are non-blocking against this baseline's PASS verdict but must be explicitly addressed when the Exposure Gate is defined and executed, not silently assumed:
+
+1. **rpcbind on `0.0.0.0:111`/`[::]:111` (§5):** currently unreachable only because the security group has zero ingress rules. The Exposure Gate's SG change must add **Cowrie-only** ingress (TCP/2222) — never a broad "allow all" rule — so this stock AL2 listener is never incidentally exposed alongside Cowrie.
+2. **AL2 end-of-support (§3):** `SUPPORT_END="2026-06-30"` has passed. Recorded above as a deliberate, accepted control-fidelity limitation specific to Control-0 — not something to remediate on this sensor.
+
 # PRE-EXPOSURE BASELINE: PASS
 
 Stopping here for human approval before any action that changes exposure state, per instruction. No port was opened, no SG rule altered, no Cowrie configuration changed, and no service was restarted as part of this capture (the one restart visible in the evidence — the Discord monitor at 04:56:45Z — was the Gate H1 SSM association applying the reviewed change set, captured as historical state, not performed during this baseline capture).
+
+The next action is a separate **Exposure Gate** — not simply opening TCP/2222 — defining and executing the exact state transition:
+
+```text
+PRE-EXPOSURE                        LIVE CONTROL
+SG ingress: 0                  →    SG ingress: Cowrie (TCP/2222) only
+                                     everything else unchanged
+```
+
+to establish a clean experimental T0. That gate has not been opened by this document.
