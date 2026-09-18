@@ -13,6 +13,7 @@ param(
     [string]$DiscordWebhookParameterName = "/patriotpot/2026-control/discord-webhook",
     [switch]$PreflightOnly,
     [switch]$FirewallOnly,
+    [switch]$H2,
     [switch]$ExecuteChangeSet
 )
 
@@ -68,6 +69,20 @@ function Get-AssetMap {
         "txtcmds-bin-netstat"               = Join-Path $ProjectRoot "txtcmds-bin-netstat"
         "txtcmds-bin-ps"                    = Join-Path $ProjectRoot "txtcmds-bin-ps"
         "patriotpot-egress-firewall.sh"     = Join-Path $NativeRoot "patriotpot-egress-firewall.sh"
+        "session_cluster.py"                = Join-Path $NativeRoot "session_cluster.py"
+        "discord_rate_governor.py"          = Join-Path $NativeRoot "discord_rate_governor.py"
+        "threat_intel__init__.py"           = Join-Path $NativeRoot "threat_intel\__init__.py"
+        "threat_intel_observables.py"       = Join-Path $NativeRoot "threat_intel\observables.py"
+        "threat_intel_parameter_store.py"   = Join-Path $NativeRoot "threat_intel\parameter_store.py"
+        "threat_intel_cache.py"             = Join-Path $NativeRoot "threat_intel\cache.py"
+        "threat_intel_provider_result.py"   = Join-Path $NativeRoot "threat_intel\provider_result.py"
+        "threat_intel_http_client.py"       = Join-Path $NativeRoot "threat_intel\http_client.py"
+        "threat_intel_greynoise.py"         = Join-Path $NativeRoot "threat_intel\greynoise.py"
+        "threat_intel_virustotal.py"        = Join-Path $NativeRoot "threat_intel\virustotal.py"
+        "threat_intel_shodan.py"            = Join-Path $NativeRoot "threat_intel\shodan.py"
+        "threat_intel_broker.py"            = Join-Path $NativeRoot "threat_intel\broker.py"
+        "threat_intel_rate_governor.py"     = Join-Path $NativeRoot "threat_intel\rate_governor.py"
+        "threat_intel_worker.py"            = Join-Path $NativeRoot "threat_intel\worker.py"
     }
 }
 
@@ -122,7 +137,34 @@ function Assert-AssetIntegrity {
             throw "Forbidden deployment declaration found in template: $forbidden"
         }
     }
-    if ($templateContent -match "(?m)^\s*(FromPort|ToPort):\s*(22|2222|2223)\s*$") {
+    # Exposure Gate E1 (LIVE CONTROL): the template now declares exactly one
+    # inbound rule, TCP/2222 from 0.0.0.0/0, for the Cowrie listener. This
+    # mirrors validate-native-baseline.py's identical, already-reviewed
+    # E1.1 fix. TCP/22, TCP/2223, and TCP/UDP 111 remain hard-prohibited
+    # everywhere in the template.
+    $ingressOccurrences = ([regex]::Matches($templateContent, "SecurityGroupIngress:")).Count
+    if ($ingressOccurrences -ne 1) {
+        throw "Template must declare exactly one SecurityGroupIngress block (found $ingressOccurrences)."
+    }
+    $ingressStart = $templateContent.IndexOf("SecurityGroupIngress:")
+    $egressStart = $templateContent.IndexOf("SecurityGroupEgress:", $ingressStart)
+    if ($egressStart -lt 0) {
+        throw "Malformed template: SecurityGroupEgress not found after SecurityGroupIngress."
+    }
+    $ingressBlock = $templateContent.Substring($ingressStart, $egressStart - $ingressStart)
+    if ($ingressBlock -notmatch "IpProtocol: tcp" -or
+        $ingressBlock -notmatch "FromPort: 2222" -or
+        $ingressBlock -notmatch "ToPort: 2222" -or
+        $ingressBlock -notmatch "CidrIp: 0\.0\.0\.0/0") {
+        throw "SecurityGroupIngress must expose exactly TCP/2222 from 0.0.0.0/0 (Exposure Gate E1)."
+    }
+    if (([regex]::Matches($ingressBlock, "IpProtocol:")).Count -ne 1) {
+        throw "SecurityGroupIngress must declare exactly one rule."
+    }
+    if ($ingressBlock -match "CidrIpv6") {
+        throw "SecurityGroupIngress must not declare IPv6 ingress."
+    }
+    if ($templateContent -match "(?m)^\s*(FromPort|ToPort):\s*(22|2223|111)\s*$") {
         throw "Prohibited inbound port declaration found in template."
     }
 }
@@ -397,6 +439,154 @@ function New-FirewallOnlyChangeSet([object]$Bundle) {
     }
 }
 
+function Test-ChangeIsHashSubstitutionOnly([object]$ResourceChange) {
+    # True only if every property-value diff on this resource differs *solely*
+    # in embedded 64-hex-char strings (content-address hashes / bundle IDs) --
+    # e.g. an association's command text moving to a new bundle path prefix
+    # with byte-identical script logic. Never true for EvidenceBucketPolicy,
+    # which has no embedded hashes; that resource is checked separately by
+    # Test-EvidenceBucketPolicyChangeIsDependencyOnly.
+    $details = @($ResourceChange.Details)
+    if ($details.Count -eq 0) {
+        return $false
+    }
+    foreach ($detail in $details) {
+        if (-not ($detail.PSObject.Properties.Name -contains "BeforeValue") -or
+            -not ($detail.PSObject.Properties.Name -contains "AfterValue")) {
+            return $false
+        }
+        $normalizedBefore = [regex]::Replace($detail.BeforeValue, "[0-9a-f]{64}", "<HASH>")
+        $normalizedAfter = [regex]::Replace($detail.AfterValue, "[0-9a-f]{64}", "<HASH>")
+        if ($normalizedBefore -ne $normalizedAfter) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Test-EvidenceBucketPolicyChangeIsDependencyOnly([object]$ResourceChange) {
+    # H1 finding: this resource can appear as Modify purely because it
+    # references !GetAtt PatriotPotInstanceRole.Arn and that role is also
+    # being modified -- CloudFormation's conservative dependency
+    # propagation, not an actual policy-document edit. Every Details[]
+    # entry must be Evaluation=Dynamic; a real content change would show
+    # Evaluation=Static with ChangeSource=DirectModification instead.
+    $details = @($ResourceChange.Details)
+    if ($details.Count -eq 0) {
+        return $false
+    }
+    foreach ($detail in $details) {
+        if ($detail.Evaluation -ne "Dynamic") {
+            return $false
+        }
+    }
+    return $true
+}
+
+function New-H2ChangeSet([object]$Bundle) {
+    $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
+    $name = "h2-threat-intel-$timestamp"
+    $parameters = @(
+        "ParameterKey=HostAmiId,UsePreviousValue=true",
+        "ParameterKey=BootstrapBundleId,UsePreviousValue=true",
+        "ParameterKey=BootstrapScriptSha256,UsePreviousValue=true",
+        "ParameterKey=FirewallBundleId,ParameterValue=$($Bundle.BundleId)",
+        "ParameterKey=FirewallScriptSha256,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'patriotpot-egress-firewall.sh'))",
+        "ParameterKey=FirewallUnitSha256,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'patriotpot-egress-firewall.service'))",
+        "ParameterKey=DiscordMonitorSha256,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'discord-monitor.py'))",
+        "ParameterKey=CowrieHostKeySecret,UsePreviousValue=true",
+        "ParameterKey=CowrieHostKeyVersionId,UsePreviousValue=true",
+        "ParameterKey=DiscordWebhookParameterName,UsePreviousValue=true",
+        "ParameterKey=InstanceType,UsePreviousValue=true",
+        "ParameterKey=Environment,UsePreviousValue=true"
+    )
+    $response = Invoke-Aws cloudformation create-change-set `
+        --stack-name $StackName `
+        --change-set-name $name `
+        --change-set-type UPDATE `
+        --description "H2 threat-intelligence enrichment and session clustering" `
+        --template-body "file://$Template" `
+        --parameters $parameters `
+        --capabilities CAPABILITY_NAMED_IAM `
+        --include-nested-stacks `
+        --output json | ConvertFrom-Json
+
+    Invoke-Aws cloudformation wait change-set-create-complete `
+        --stack-name $StackName `
+        --change-set-name $response.Id
+    $review = Invoke-Aws cloudformation describe-change-set `
+        --stack-name $StackName `
+        --change-set-name $response.Id `
+        --include-property-values `
+        --output json | ConvertFrom-Json
+    # H1 finding: --include-property-values can silently omit a Dynamic-only
+    # change (e.g. EvidenceBucketPolicy). The allowlist below is evaluated
+    # against the plain (no property-values) listing, which is authoritative
+    # for "which resources changed at all".
+    $plainReview = Invoke-Aws cloudformation describe-change-set `
+        --stack-name $StackName `
+        --change-set-name $response.Id `
+        --output json | ConvertFrom-Json
+
+    $replacements = @(
+        $plainReview.Changes |
+            Where-Object {
+                $_.ResourceChange.PSObject.Properties.Name -contains "Replacement" -and
+                $_.ResourceChange.Replacement -in @("True", "Conditional")
+            }
+    )
+    if ($replacements.Count -gt 0) {
+        throw "H2 change set contains a forbidden replacement: $($replacements.ResourceChange.LogicalResourceId -join ', ')"
+    }
+
+    $requiredResources = @("PatriotPotDiscordMonitorAssociation", "PatriotPotInstanceRole")
+    $conditionallyAllowed = @("EvidenceBucketPolicy", "PatriotPotEgressFirewallAssociation")
+    $actualResources = @($plainReview.Changes.ResourceChange.LogicalResourceId)
+
+    foreach ($required in $requiredResources) {
+        if ($actualResources -notcontains $required) {
+            throw "H2 change set lacks required resource update: $required"
+        }
+    }
+
+    $unexpected = @($actualResources | Where-Object { ($requiredResources + $conditionallyAllowed) -notcontains $_ })
+    if ($unexpected.Count -gt 0) {
+        throw "H2 change set contains resource(s) outside the allowlist: $($unexpected -join ', ')"
+    }
+
+    # explicit hard-fail even if somehow present under a different guise
+    foreach ($protected in @(
+        "PatriotPotInstanceV2", "PatriotPotEIP", "PatriotPotSecurityGroup",
+        "VPC", "PublicSubnet", "PublicRouteTable", "PublicRoute",
+        "SubnetRouteTableAssociation", "InternetGateway", "AttachGateway"
+    )) {
+        if ($actualResources -contains $protected) {
+            throw "H2 change set unexpectedly touches protected resource: $protected"
+        }
+    }
+
+    if ($actualResources -contains "EvidenceBucketPolicy") {
+        $bucketPolicyChange = ($plainReview.Changes | Where-Object { $_.ResourceChange.LogicalResourceId -eq "EvidenceBucketPolicy" }).ResourceChange
+        if (-not (Test-EvidenceBucketPolicyChangeIsDependencyOnly $bucketPolicyChange)) {
+            throw "H2 change set modifies EvidenceBucketPolicy with a non-dependency-only change; this requires separate review."
+        }
+    }
+
+    if ($actualResources -contains "PatriotPotEgressFirewallAssociation") {
+        $firewallAssocChange = ($plainReview.Changes | Where-Object { $_.ResourceChange.LogicalResourceId -eq "PatriotPotEgressFirewallAssociation" }).ResourceChange
+        if (-not (Test-ChangeIsHashSubstitutionOnly $firewallAssocChange)) {
+            throw "H2 change set modifies PatriotPotEgressFirewallAssociation beyond a bundle-path hash substitution; this requires separate review."
+        }
+    }
+
+    return [pscustomobject]@{
+        Id = $response.Id
+        Name = $name
+        Review = $review
+        PlainReview = $plainReview
+    }
+}
+
 Set-Location $ProjectRoot
 
 Section "PREFLIGHT"
@@ -480,6 +670,77 @@ if ($FirewallOnly) {
         --output json | ConvertFrom-Json
     Write-Host "Final stack status: $($final.Stacks[0].StackStatus)"
     Write-Host "Firewall and Discord monitor associations are CloudFormation-managed; runtime validation remains required."
+    return
+}
+
+if ($H2) {
+    $stack = Invoke-Aws cloudformation describe-stacks `
+        --stack-name $StackName `
+        --output json | ConvertFrom-Json
+    $EvidenceBucket = (
+        $stack.Stacks[0].Outputs |
+        Where-Object OutputKey -eq "EvidenceBucketName"
+    ).OutputValue
+    if (-not $EvidenceBucket) {
+        throw "Existing evidence bucket output was not found."
+    }
+    $currentInstanceId = (
+        Invoke-Aws cloudformation describe-stack-resource `
+            --stack-name $StackName `
+            --logical-resource-id PatriotPotInstanceV2 `
+            --output json | ConvertFrom-Json
+    ).StackResourceDetail.PhysicalResourceId
+    if ([string]::IsNullOrWhiteSpace($currentInstanceId)) {
+        throw "Existing native instance ID was not found."
+    }
+    Write-Host "H2 threat-intelligence preflight PASS"
+    Write-Host "Cowrie host key and Discord credential: not accessed"
+    Write-Host "Existing instance: $currentInstanceId (protected from replacement)"
+    Write-Host "Template ingress declaration: unchanged (TCP/2222 only)"
+
+    if ($PreflightOnly) {
+        return
+    }
+
+    Section "PUBLISH CONTENT-ADDRESSED H2 SUPPORT BUNDLE"
+    $bundle = Publish-BootstrapBundle $EvidenceBucket
+    Write-Host "Bundle: $($bundle.BundleId)"
+    Write-Host "Assets: $($bundle.AssetCount)"
+
+    Section "CREATE AND REVIEW H2 CLOUDFORMATION CHANGE SET"
+    $changeSet = New-H2ChangeSet $bundle
+    Write-Host "Change set: $($changeSet.Id)"
+    Write-Host "Resource inventory (authoritative, no --include-property-values):"
+    $changeSet.PlainReview.Changes | ForEach-Object {
+        $change = $_.ResourceChange
+        $replacement = if ($change.PSObject.Properties.Name -contains "Replacement") {
+            $change.Replacement
+        } else {
+            "N/A"
+        }
+        Write-Host (
+            "{0,-40} action={1,-8} replacement={2}" -f
+            $change.LogicalResourceId,
+            $change.Action,
+            $replacement
+        )
+    }
+
+    if (-not $ExecuteChangeSet) {
+        Write-Host "Change set passed the H2 allowlist guard (no replacement, no resource outside PatriotPotDiscordMonitorAssociation / PatriotPotInstanceRole / conditionally-verified EvidenceBucketPolicy / PatriotPotEgressFirewallAssociation); not executed."
+        return
+    }
+
+    Section "EXECUTE REVIEWED H2 CHANGE SET"
+    Invoke-Aws cloudformation execute-change-set `
+        --stack-name $StackName `
+        --change-set-name $changeSet.Id
+    Invoke-Aws cloudformation wait stack-update-complete --stack-name $StackName
+    $final = Invoke-Aws cloudformation describe-stacks `
+        --stack-name $StackName `
+        --output json | ConvertFrom-Json
+    Write-Host "Final stack status: $($final.Stacks[0].StackStatus)"
+    Write-Host "Threat-intelligence enrichment is now CloudFormation-managed; runtime validation remains required."
     return
 }
 

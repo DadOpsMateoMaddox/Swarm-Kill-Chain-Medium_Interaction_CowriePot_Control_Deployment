@@ -189,10 +189,31 @@ Resources:
               - Effect: Allow
                 Action:
                   - 's3:GetObject'
+                # Explicit per-object ARNs, not a prefix wildcard: a wildcard
+                # here would grant read access to any future object placed
+                # under this bundle prefix, not just the ones the running
+                # association actually fetches today -- a real (if narrow)
+                # privilege expansion, not merely a maintenance convenience.
+                # This list must be kept in sync with the association's
+                # fetch_h2_support_file calls below.
                 Resource:
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/discord-monitor.py'
                   - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/patriotpot-egress-firewall.sh'
                   - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/patriotpot-egress-firewall.service'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/discord-monitor.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/session_cluster.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/discord_rate_governor.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel__init__.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_observables.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_parameter_store.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_cache.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_provider_result.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_http_client.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_greynoise.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_virustotal.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_shodan.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_broker.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_rate_governor.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_worker.py'
 
         - PolicyName: PatriotPotEvidenceArchive
           PolicyDocument:
@@ -244,6 +265,21 @@ Resources:
                 Action:
                   - 'ssm:GetParameter'
                 Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${DiscordWebhookParameterName}'
+
+        - PolicyName: PatriotPotThreatIntelCredential
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                # H2: exactly the three threat-intel provider keys, no
+                # wildcard. Each is a fixed path, not a stack parameter, per
+                # the H2 requirement that this scope stay narrow and exact.
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/patriotpot/2026-control/greynoise-api-key'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/patriotpot/2026-control/virustotal-api-key'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/patriotpot/2026-control/shodan-api-key'
 
   PatriotPotInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -605,6 +641,66 @@ Resources:
                 /opt/patriotpot-discord/discord-monitor.py.new \
                 /usr/local/libexec/patriotpot-discord-monitor.py
               rm -f /opt/patriotpot-discord/discord-monitor.py.new
+              install -d -m 0755 -o root -g root /usr/local/libexec/threat_intel
+              install -d -m 0700 -o patriot-discord -g patriot-discord /var/lib/patriotpot-discord/threat-intel
+              fetch_h2_support_file() {
+                local asset_name="$1"
+                local expected_sha256="$2"
+                local destination="$3"
+                AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
+                  --bucket '${EvidenceBucket}' \
+                  --key "bootstrap/${FirewallBundleId}/$asset_name" \
+                  "/opt/patriotpot-discord/$asset_name.new" \
+                  --output json \
+                  --profile patriotpot \
+                  --region us-east-1
+                printf '%s  %s\n' "$expected_sha256" "/opt/patriotpot-discord/$asset_name.new" |
+                  sha256sum --check --status
+                install -m 0644 -o root -g root "/opt/patriotpot-discord/$asset_name.new" "$destination"
+                rm -f "/opt/patriotpot-discord/$asset_name.new"
+              }
+              fetch_h2_support_file session_cluster.py \
+                b0ae7a61f5ed3ca0055b7f3306be22127ef4a796b4e1562f06dff310b13e475c \
+                /usr/local/libexec/session_cluster.py
+              fetch_h2_support_file discord_rate_governor.py \
+                e273bb8f3e7876f58ae2d1bb10220bc1eaf5560ba0cf2f60ab34c82d77026f42 \
+                /usr/local/libexec/discord_rate_governor.py
+              fetch_h2_support_file threat_intel__init__.py \
+                d5986e22011704756d751f43dc9333a547271cee81052c347d411e9e5e1b880a \
+                /usr/local/libexec/threat_intel/__init__.py
+              fetch_h2_support_file threat_intel_observables.py \
+                3cf659977250161e413d6047a29a43b35b3919fbfa2e6f119e08aac89b047cff \
+                /usr/local/libexec/threat_intel/observables.py
+              fetch_h2_support_file threat_intel_parameter_store.py \
+                e0d4b34a76eab34db939b18f37b1d1d987aad757827089494b32f17e27bda9fe \
+                /usr/local/libexec/threat_intel/parameter_store.py
+              fetch_h2_support_file threat_intel_cache.py \
+                cd429e9d8c787084d52133f1e4b04925fb38f2458f8e1bc5b0f7fc386febf92a \
+                /usr/local/libexec/threat_intel/cache.py
+              fetch_h2_support_file threat_intel_provider_result.py \
+                2bf42c481b14ca2dddbcb3fbe11bea7861cc9ca68a64ef078065fafc82c9c0b4 \
+                /usr/local/libexec/threat_intel/provider_result.py
+              fetch_h2_support_file threat_intel_http_client.py \
+                4aca1fa502cd234d832b5cf012909cc8a886bf5f6aa29e1ff7ee1e79470d6e7e \
+                /usr/local/libexec/threat_intel/http_client.py
+              fetch_h2_support_file threat_intel_greynoise.py \
+                200ff0abfbfb7a7197a0187139ee8e634ab7e9f1fa92f38400c6278701a3eefd \
+                /usr/local/libexec/threat_intel/greynoise.py
+              fetch_h2_support_file threat_intel_virustotal.py \
+                2a2a5c43f27405f7ca2f7c6c4686de7872632c7737fd9ee02bac333833dd91d2 \
+                /usr/local/libexec/threat_intel/virustotal.py
+              fetch_h2_support_file threat_intel_shodan.py \
+                4cb7a9d25631240c3e600be7c235d38029b06fd1390fb97768aafdd232f1da1d \
+                /usr/local/libexec/threat_intel/shodan.py
+              fetch_h2_support_file threat_intel_broker.py \
+                7c4934aa7d28a2ae258254f39af5cdf67fcd8655dd57615b9f7c7f39985b34a4 \
+                /usr/local/libexec/threat_intel/broker.py
+              fetch_h2_support_file threat_intel_rate_governor.py \
+                0a4b1ce978506c263e9c1c164dad3c0a1dc0fe944021e208f795606da742539e \
+                /usr/local/libexec/threat_intel/rate_governor.py
+              fetch_h2_support_file threat_intel_worker.py \
+                68d5cf8d6d2cab24e25a83d6ccc987d38cbf61784fa8be75909eb31a0a65e6e1 \
+                /usr/local/libexec/threat_intel/worker.py
               systemctl try-restart patriotpot-discord.service
               systemctl is-active --quiet patriotpot-discord.service
 

@@ -45,6 +45,20 @@ ASSETS = {
     "txtcmds-bin-netstat": ROOT / "txtcmds-bin-netstat",
     "txtcmds-bin-ps": ROOT / "txtcmds-bin-ps",
     "patriotpot-egress-firewall.sh": NATIVE / "patriotpot-egress-firewall.sh",
+    "session_cluster.py": NATIVE / "session_cluster.py",
+    "discord_rate_governor.py": NATIVE / "discord_rate_governor.py",
+    "threat_intel__init__.py": NATIVE / "threat_intel" / "__init__.py",
+    "threat_intel_observables.py": NATIVE / "threat_intel" / "observables.py",
+    "threat_intel_parameter_store.py": NATIVE / "threat_intel" / "parameter_store.py",
+    "threat_intel_cache.py": NATIVE / "threat_intel" / "cache.py",
+    "threat_intel_provider_result.py": NATIVE / "threat_intel" / "provider_result.py",
+    "threat_intel_http_client.py": NATIVE / "threat_intel" / "http_client.py",
+    "threat_intel_greynoise.py": NATIVE / "threat_intel" / "greynoise.py",
+    "threat_intel_virustotal.py": NATIVE / "threat_intel" / "virustotal.py",
+    "threat_intel_shodan.py": NATIVE / "threat_intel" / "shodan.py",
+    "threat_intel_broker.py": NATIVE / "threat_intel" / "broker.py",
+    "threat_intel_rate_governor.py": NATIVE / "threat_intel" / "rate_governor.py",
+    "threat_intel_worker.py": NATIVE / "threat_intel" / "worker.py",
 }
 
 
@@ -71,9 +85,10 @@ def validate_template() -> None:
         "KeyPairName",
     ):
         require(forbidden not in text, f"forbidden template declaration: {forbidden}")
-    # Exposure Gate E1 (LIVE CONTROL): the template now declares exactly one
-    # inbound rule, TCP/2222 from 0.0.0.0/0, for the Cowrie listener. TCP/22
-    # and TCP/2223 remain hard-prohibited everywhere in the template.
+    # Exposure Gate E1 (LIVE CONTROL): the template must declare one and
+    # only one attacker-facing ingress rule -- IPv4 TCP/2222 from 0.0.0.0/0.
+    # TCP/22, TCP/2223, TCP/UDP 111 (rpcbind), any other port/protocol, and
+    # IPv6 ingress of any kind remain hard-prohibited everywhere.
     require(text.count("SecurityGroupIngress:") == 1, "template must declare exactly one SecurityGroupIngress block")
     ingress_start = text.find("SecurityGroupIngress:")
     ingress_end = text.find("SecurityGroupEgress:", ingress_start)
@@ -89,8 +104,8 @@ def validate_template() -> None:
     require(ingress_block.count("IpProtocol:") == 1, "SecurityGroupIngress must declare exactly one rule")
     require("CidrIpv6" not in ingress_block, "SecurityGroupIngress must not declare IPv6 ingress")
     require(
-        not re.search(r"(?m)^\s*(FromPort|ToPort):\s*(22|2223)\s*$", text),
-        "template declares a prohibited inbound port (22 or 2223)",
+        not re.search(r"(?m)^\s*(FromPort|ToPort):\s*(22|2223|111)\s*$", text),
+        "template declares a prohibited inbound port (22, 2223, or 111)",
     )
     for required in (
         "CreationPolicy:",

@@ -38,7 +38,7 @@ trap 'record_failure_phase $?' EXIT
 read -r -d '' ASSET_HASHES <<'EOF' || true
 65ba7f77c4fa17e77f7fee3ad0510b510f862b88e46f53a6b266c23dfb7afb3a  archive-requirements.lock
 4dcc0dfe4b652ab4647f6d2fe992de0bebaedbd09f64dbe284b157545fb232b5  cowrie-requirements.lock
-a8606b55fad0ba9e403f690f86e1d4c1eb52b3f36c162369f0266343ce9930d9  discord-monitor.py
+6c4e7bc3e4516d4df828e37d4abee579b2082648857312be883a4bbb1aebb79c  discord-monitor.py
 1b8089d405e1766e3e1182c1d26cd0de66d35bd0205965b62979b9699a2d2b54  s3-archive.py
 ee2d62fe0cc0ed88d6180b30c5cf19611d481432aea058977ea88fe07ee918b9  install-host-key.py
 77057b6c86189dcc153ddfeb50c00e6fd3165711e7a6ddff121241a73c6fb7de  cowrie.service
@@ -55,6 +55,20 @@ aabdb61b03b6486e778561fd624ff143d111bd1d218ec5672b81c633b46d2c4c  honeyfs-etc-pa
 12ab3fc30374985bbc73015ca0359f0b3a4dcb6dd209bcc182d3a9d0075d1685  txtcmds-bin-netstat
 84072fad2ecf8939f1fda1a38ee8433e4555682be82210ff6ec5f180452ed3b3  txtcmds-bin-ps
 0e1167ceb9f2c546ba5ba3a0c1e98b78e6b8625eee6d963d16de5692b757e839  patriotpot-egress-firewall.sh
+b0ae7a61f5ed3ca0055b7f3306be22127ef4a796b4e1562f06dff310b13e475c  session_cluster.py
+e273bb8f3e7876f58ae2d1bb10220bc1eaf5560ba0cf2f60ab34c82d77026f42  discord_rate_governor.py
+d5986e22011704756d751f43dc9333a547271cee81052c347d411e9e5e1b880a  threat_intel__init__.py
+3cf659977250161e413d6047a29a43b35b3919fbfa2e6f119e08aac89b047cff  threat_intel_observables.py
+e0d4b34a76eab34db939b18f37b1d1d987aad757827089494b32f17e27bda9fe  threat_intel_parameter_store.py
+cd429e9d8c787084d52133f1e4b04925fb38f2458f8e1bc5b0f7fc386febf92a  threat_intel_cache.py
+2bf42c481b14ca2dddbcb3fbe11bea7861cc9ca68a64ef078065fafc82c9c0b4  threat_intel_provider_result.py
+4aca1fa502cd234d832b5cf012909cc8a886bf5f6aa29e1ff7ee1e79470d6e7e  threat_intel_http_client.py
+200ff0abfbfb7a7197a0187139ee8e634ab7e9f1fa92f38400c6278701a3eefd  threat_intel_greynoise.py
+2a2a5c43f27405f7ca2f7c6c4686de7872632c7737fd9ee02bac333833dd91d2  threat_intel_virustotal.py
+4cb7a9d25631240c3e600be7c235d38029b06fd1390fb97768aafdd232f1da1d  threat_intel_shodan.py
+7c4934aa7d28a2ae258254f39af5cdf67fcd8655dd57615b9f7c7f39985b34a4  threat_intel_broker.py
+0a4b1ce978506c263e9c1c164dad3c0a1dc0fe944021e208f795606da742539e  threat_intel_rate_governor.py
+68d5cf8d6d2cab24e25a83d6ccc987d38cbf61784fa8be75909eb31a0a65e6e1  threat_intel_worker.py
 EOF
 
 required_environment=(
@@ -343,6 +357,22 @@ ssh-keygen -lf /opt/cowrie/etc/ssh_host_rsa_key.pub
 set_phase "monitoring_archive_services"
 echo "native bootstrap: monitoring and archive services"
 install -m 0755 -o root -g root "$ASSET_DIR/discord-monitor.py" /usr/local/libexec/patriotpot-discord-monitor.py
+install -m 0644 -o root -g root "$ASSET_DIR/session_cluster.py" /usr/local/libexec/session_cluster.py
+install -m 0644 -o root -g root "$ASSET_DIR/discord_rate_governor.py" /usr/local/libexec/discord_rate_governor.py
+install -d -m 0755 -o root -g root /usr/local/libexec/threat_intel
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel__init__.py" /usr/local/libexec/threat_intel/__init__.py
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel_observables.py" /usr/local/libexec/threat_intel/observables.py
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel_parameter_store.py" /usr/local/libexec/threat_intel/parameter_store.py
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel_cache.py" /usr/local/libexec/threat_intel/cache.py
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel_provider_result.py" /usr/local/libexec/threat_intel/provider_result.py
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel_http_client.py" /usr/local/libexec/threat_intel/http_client.py
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel_greynoise.py" /usr/local/libexec/threat_intel/greynoise.py
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel_virustotal.py" /usr/local/libexec/threat_intel/virustotal.py
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel_shodan.py" /usr/local/libexec/threat_intel/shodan.py
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel_broker.py" /usr/local/libexec/threat_intel/broker.py
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel_rate_governor.py" /usr/local/libexec/threat_intel/rate_governor.py
+install -m 0644 -o root -g root "$ASSET_DIR/threat_intel_worker.py" /usr/local/libexec/threat_intel/worker.py
+install -d -m 0700 -o patriot-discord -g patriot-discord /var/lib/patriotpot-discord/threat-intel
 install -m 0755 -o root -g root "$ASSET_DIR/s3-archive.py" /usr/local/libexec/patriotpot-s3-archive.py
 install -m 0644 -o root -g root "$ASSET_DIR/cowrie.service" /etc/systemd/system/cowrie.service
 install -m 0644 -o root -g root "$ASSET_DIR/patriotpot-discord.service" /etc/systemd/system/patriotpot-discord.service
@@ -367,6 +397,10 @@ DISCORD_PARAMETER_NAME=$DISCORD_PARAMETER_NAME
 COWRIE_JSON_PATH=/opt/cowrie/var/log/cowrie/cowrie.json
 DISCORD_STATE_PATH=/var/lib/patriotpot-discord/state.json
 DISCORD_OPS_LOG=/var/log/patriotpot/discord.log
+GREYNOISE_PARAMETER_NAME=/patriotpot/2026-control/greynoise-api-key
+VIRUSTOTAL_PARAMETER_NAME=/patriotpot/2026-control/virustotal-api-key
+SHODAN_PARAMETER_NAME=/patriotpot/2026-control/shodan-api-key
+THREAT_INTEL_CACHE_DIR=/var/lib/patriotpot-discord/threat-intel
 EOF
 chmod 0640 /etc/patriotpot/discord.env
 chown root:patriot-discord /etc/patriotpot/discord.env
