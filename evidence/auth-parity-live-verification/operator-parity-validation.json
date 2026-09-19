@@ -1,0 +1,29 @@
+{
+  "purpose": "operator-marked auth-parity validation (Epoch B)",
+  "classification": "OPERATOR_TRAFFIC - EXCLUDE FROM LONGITUDINAL CORPUS",
+  "marker": "AUTHPARITY-OPERATOR-VALIDATION-20260919",
+  "target": "13.217.73.134:2222",
+  "attempts": [
+    {
+      "username": "root",
+      "password_marker": "AUTHPARITY-OPERATOR-VALIDATION-20260919-expect-success",
+      "expected": "SUCCESS",
+      "observed": "SUCCESS",
+      "matches_expectation": true,
+      "detail": "transport_active=True remote_version=SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2",
+      "started_utc": "2026-09-19T22:19:33.921720+00:00",
+      "ended_utc": "2026-09-19T22:19:34.073429+00:00"
+    },
+    {
+      "username": "guest",
+      "password_marker": "AUTHPARITY-OPERATOR-VALIDATION-20260919-expect-denial",
+      "expected": "DENIAL",
+      "observed": "DENIAL",
+      "matches_expectation": true,
+      "detail": "AuthenticationException: Authentication failed.",
+      "started_utc": "2026-09-19T22:19:34.073468+00:00",
+      "ended_utc": "2026-09-19T22:19:35.277155+00:00"
+    }
+  ],
+  "all_as_expected": true
+}

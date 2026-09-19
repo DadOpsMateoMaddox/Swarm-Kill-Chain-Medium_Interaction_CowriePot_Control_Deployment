@@ -1,0 +1,177 @@
+{
+  "ChangeSetName": "auth-parity-final-20260919T220333Z",
+  "ChangeSetId": "arn:aws:cloudformation:us-east-1:706162601288:changeSet/auth-parity-final-20260919T220333Z/2f157f47-dd1b-4ae2-ac8d-28e1f9aed4f4",
+  "StackId": "arn:aws:cloudformation:us-east-1:706162601288:stack/patriotpot-2026-control-prod/90c016a0-af23-11f1-8878-0affff84d99f",
+  "StackName": "patriotpot-2026-control-prod",
+  "Description": "Control-parity correction: 2025 authentication semantics (evidence/AUTH-PARITY-GATE.md) - final",
+  "Parameters": [
+    {
+      "ParameterKey": "FirewallBundleId",
+      "ParameterValue": "f10344400557d7f8e7473cd026d23e00b88a03bc3e7d251c5c78b1d92912c9cc"
+    },
+    {
+      "ParameterKey": "DiscordMonitorSha256",
+      "ParameterValue": "a8606b55fad0ba9e403f690f86e1d4c1eb52b3f36c162369f0266343ce9930d9"
+    },
+    {
+      "ParameterKey": "FirewallScriptSha256",
+      "ParameterValue": "0e1167ceb9f2c546ba5ba3a0c1e98b78e6b8625eee6d963d16de5692b757e839"
+    },
+    {
+      "ParameterKey": "AuthParityBundleId",
+      "ParameterValue": "8f4f8645f05f25392adc9cb0963f7a60adaf677d2195dfd588a83c433c6365a6"
+    },
+    {
+      "ParameterKey": "DiscordWebhookParameterName",
+      "ParameterValue": "/patriotpot/2026-control/discord-webhook"
+    },
+    {
+      "ParameterKey": "FirewallUnitSha256",
+      "ParameterValue": "11d9124d1390bd44985cb6884e032b80979ac0f8029b541230732f7cdcd026e8"
+    },
+    {
+      "ParameterKey": "HostAmiId",
+      "ParameterValue": "ami-0b3ff1b856ac6fda3"
+    },
+    {
+      "ParameterKey": "UserdbTxtSha256",
+      "ParameterValue": "8f4f8645f05f25392adc9cb0963f7a60adaf677d2195dfd588a83c433c6365a6"
+    },
+    {
+      "ParameterKey": "BootstrapBundleId",
+      "ParameterValue": "776733848f3b2d2163ab37bc95fd0db37651ada65a4ef25a38490e39e6d13b1e"
+    },
+    {
+      "ParameterKey": "CowrieHostKeySecret",
+      "ParameterValue": "****"
+    },
+    {
+      "ParameterKey": "Environment",
+      "ParameterValue": "production"
+    },
+    {
+      "ParameterKey": "InstanceType",
+      "ParameterValue": "t3.micro"
+    },
+    {
+      "ParameterKey": "BootstrapScriptSha256",
+      "ParameterValue": "776733848f3b2d2163ab37bc95fd0db37651ada65a4ef25a38490e39e6d13b1e"
+    },
+    {
+      "ParameterKey": "CowrieHostKeyVersionId",
+      "ParameterValue": "****"
+    }
+  ],
+  "CreationTime": "2026-09-19T22:03:32.387000+00:00",
+  "ExecutionStatus": "AVAILABLE",
+  "Status": "CREATE_COMPLETE",
+  "NotificationARNs": [],
+  "RollbackConfiguration": {},
+  "Capabilities": [
+    "CAPABILITY_NAMED_IAM"
+  ],
+  "Tags": [
+    {
+      "Key": "Project",
+      "Value": "PatriotPot"
+    },
+    {
+      "Key": "Control",
+      "Value": "Control-0"
+    },
+    {
+      "Key": "Experiment",
+      "Value": "SwarmKillChain"
+    },
+    {
+      "Key": "Environment",
+      "Value": "production"
+    }
+  ],
+  "Changes": [
+    {
+      "Type": "Resource",
+      "ResourceChange": {
+        "Action": "Modify",
+        "LogicalResourceId": "EvidenceBucketPolicy",
+        "PhysicalResourceId": "patriotpot-evidence-706162601288-us-east-1",
+        "ResourceType": "AWS::S3::BucketPolicy",
+        "Replacement": "False",
+        "Scope": [
+          "Properties"
+        ],
+        "Details": [
+          {
+            "Target": {
+              "Attribute": "Properties",
+              "Name": "PolicyDocument",
+              "RequiresRecreation": "Never"
+            },
+            "Evaluation": "Dynamic",
+            "ChangeSource": "ResourceAttribute",
+            "CausingEntity": "PatriotPotInstanceRole.Arn"
+          }
+        ]
+      }
+    },
+    {
+      "Type": "Resource",
+      "ResourceChange": {
+        "Action": "Add",
+        "LogicalResourceId": "PatriotPotAuthParityAssociation",
+        "ResourceType": "AWS::SSM::Association",
+        "Scope": [],
+        "Details": []
+      }
+    },
+    {
+      "Type": "Resource",
+      "ResourceChange": {
+        "Action": "Modify",
+        "LogicalResourceId": "PatriotPotInstanceRole",
+        "PhysicalResourceId": "patriotpot-instance-role-production",
+        "ResourceType": "AWS::IAM::Role",
+        "Replacement": "False",
+        "Scope": [
+          "Properties"
+        ],
+        "Details": [
+          {
+            "Target": {
+              "Attribute": "Properties",
+              "Name": "Policies",
+              "RequiresRecreation": "Never"
+            },
+            "Evaluation": "Static",
+            "ChangeSource": "ParameterReference",
+            "CausingEntity": "AuthParityBundleId"
+          },
+          {
+            "Target": {
+              "Attribute": "Properties",
+              "Name": "Policies",
+              "RequiresRecreation": "Never"
+            },
+            "Evaluation": "Dynamic",
+            "ChangeSource": "DirectModification"
+          }
+        ]
+      }
+    }
+  ],
+  "IncludeNestedStacks": true,
+  "ResponseMetadata": {
+    "RequestId": "fef9d4c3-3979-44f7-9ed2-8ca7e6055f76",
+    "HTTPStatusCode": 200,
+    "HTTPHeaders": {
+      "x-amzn-requestid": "fef9d4c3-3979-44f7-9ed2-8ca7e6055f76",
+      "strict-transport-security": "max-age=47304000; includeSubDomains",
+      "cache-control": "no-store, no-cache",
+      "date": "Sat, 19 Sep 2026 22:03:42 GMT",
+      "content-type": "text/xml",
+      "content-length": "6718",
+      "connection": "keep-alive"
+    },
+    "RetryAttempts": 0
+  }
+}

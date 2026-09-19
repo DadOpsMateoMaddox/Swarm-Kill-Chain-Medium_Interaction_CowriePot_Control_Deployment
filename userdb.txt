@@ -1,10 +1,7 @@
 root:x:*:
 admin:x:*:
-user:x:*:
-oracle:x:*:
-mysql:x:*:
 postgres:x:*:
+mysql:x:*:
 backup:x:*:
-test:x:*:
-guest:x:*:
-ubuntu:x:*:
+deploy:x:*:
+webuser:x:*:

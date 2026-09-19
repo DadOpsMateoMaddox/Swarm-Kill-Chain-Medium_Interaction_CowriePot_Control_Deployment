@@ -1,0 +1,85 @@
+{
+  "retrieval_utc": "2026-09-19T05:02:45.329714Z",
+  "sts_account": "706162601288",
+  "sts_caller_arn": "arn:aws:iam::706162601288:user/patriotpot-deployer",
+  "stack_name": "patriotpot-2026-control-prod",
+  "stack_id": "arn:aws:cloudformation:us-east-1:706162601288:stack/patriotpot-2026-control-prod/90c016a0-af23-11f1-8878-0affff84d99f",
+  "stack_status": "UPDATE_COMPLETE",
+  "stack_creation_time": "2026-09-13T03:31:11.329000+00:00",
+  "stack_last_updated_time": "2026-09-18T05:44:42.684000+00:00",
+  "deployed_template_sha256": "c2b15f43abf839b2f701c7cce34d59d21fb412ad9310b3f61dde0bd39301ce17",
+  "template_body_returned_as_dict": false,
+  "evidence_bucket_name": "patriotpot-evidence-706162601288-us-east-1",
+  "parameters": [
+    {
+      "ParameterKey": "FirewallBundleId",
+      "ParameterValue": "f10344400557d7f8e7473cd026d23e00b88a03bc3e7d251c5c78b1d92912c9cc"
+    },
+    {
+      "ParameterKey": "DiscordMonitorSha256",
+      "ParameterValue": "a8606b55fad0ba9e403f690f86e1d4c1eb52b3f36c162369f0266343ce9930d9"
+    },
+    {
+      "ParameterKey": "HostAmiId",
+      "ParameterValue": "ami-0b3ff1b856ac6fda3"
+    },
+    {
+      "ParameterKey": "FirewallScriptSha256",
+      "ParameterValue": "0e1167ceb9f2c546ba5ba3a0c1e98b78e6b8625eee6d963d16de5692b757e839"
+    },
+    {
+      "ParameterKey": "DiscordWebhookParameterName",
+      "ParameterValue": "/patriotpot/2026-control/discord-webhook"
+    },
+    {
+      "ParameterKey": "BootstrapBundleId",
+      "ParameterValue": "776733848f3b2d2163ab37bc95fd0db37651ada65a4ef25a38490e39e6d13b1e"
+    },
+    {
+      "ParameterKey": "CowrieHostKeySecret",
+      "ParameterValue": "****"
+    },
+    {
+      "ParameterKey": "FirewallUnitSha256",
+      "ParameterValue": "11d9124d1390bd44985cb6884e032b80979ac0f8029b541230732f7cdcd026e8"
+    },
+    {
+      "ParameterKey": "Environment",
+      "ParameterValue": "production"
+    },
+    {
+      "ParameterKey": "InstanceType",
+      "ParameterValue": "t3.micro"
+    },
+    {
+      "ParameterKey": "BootstrapScriptSha256",
+      "ParameterValue": "776733848f3b2d2163ab37bc95fd0db37651ada65a4ef25a38490e39e6d13b1e"
+    },
+    {
+      "ParameterKey": "CowrieHostKeyVersionId",
+      "ParameterValue": "****"
+    }
+  ],
+  "outputs": [
+    {
+      "OutputKey": "ExposureState",
+      "OutputValue": "NO_INGRESS_SSM_ONLY"
+    },
+    {
+      "OutputKey": "SSMSessionLink",
+      "OutputValue": "https://console.aws.amazon.com/systems-manager/session-manager/i-00270aeefb6266a7b?region=us-east-1"
+    },
+    {
+      "OutputKey": "ControlElasticIp",
+      "OutputValue": "13.217.73.134"
+    },
+    {
+      "OutputKey": "EvidenceBucketName",
+      "OutputValue": "patriotpot-evidence-706162601288-us-east-1"
+    },
+    {
+      "OutputKey": "InstanceId",
+      "OutputValue": "i-00270aeefb6266a7b"
+    }
+  ]
+}

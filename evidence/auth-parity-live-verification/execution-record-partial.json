@@ -1,0 +1,139 @@
+{
+  "pre_change_set": {
+    "name": "auth-parity-final-20260919T220333Z",
+    "id": "arn:aws:cloudformation:us-east-1:706162601288:changeSet/auth-parity-final-20260919T220333Z/2f157f47-dd1b-4ae2-ac8d-28e1f9aed4f4",
+    "status": "CREATE_COMPLETE",
+    "execution_status": "AVAILABLE",
+    "inventory": [
+      [
+        "EvidenceBucketPolicy",
+        "Modify",
+        "False"
+      ],
+      [
+        "PatriotPotAuthParityAssociation",
+        "Add",
+        "N/A"
+      ],
+      [
+        "PatriotPotInstanceRole",
+        "Modify",
+        "False"
+      ]
+    ]
+  },
+  "pre_state": {
+    "instance_id": "i-00270aeefb6266a7b",
+    "instance_state": "running",
+    "eip": "13.217.73.134",
+    "security_group_ids": [
+      "sg-0647129753848a7b0"
+    ],
+    "ingress_rules": [
+      {
+        "proto": "tcp",
+        "from": 2222,
+        "to": 2222,
+        "cidrs": [
+          "0.0.0.0/0"
+        ]
+      }
+    ],
+    "ssm_associations": [],
+    "bucket_policy": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "DenyInsecureTransport",
+          "Effect": "Deny",
+          "Principal": "*",
+          "Action": "s3:*",
+          "Resource": [
+            "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1",
+            "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1/*"
+          ],
+          "Condition": {
+            "Bool": {
+              "aws:SecureTransport": "false"
+            }
+          }
+        },
+        {
+          "Sid": "DenyUnconditionalControlArchiveWrites",
+          "Effect": "Deny",
+          "Principal": {
+            "AWS": "arn:aws:iam::706162601288:role/patriotpot-instance-role-production"
+          },
+          "Action": "s3:PutObject",
+          "Resource": "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1/control/production/sensors/control-0/instances/*/segments/*",
+          "Condition": {
+            "StringNotEquals": {
+              "s3:if-none-match": "*"
+            }
+          }
+        }
+      ]
+    },
+    "captured_at": "2026-09-19T22:07:40.452694+00:00"
+  },
+  "t_execute_requested": "2026-09-19T22:07:40.452732+00:00",
+  "t_stack_update_complete": "2026-09-19T22:08:22.629123+00:00",
+  "stack_status_after": "UPDATE_COMPLETE",
+  "stack_last_updated_after": "2026-09-19T22:07:39.679000+00:00",
+  "stack_events": [
+    {
+      "ts": "2026-09-19T22:07:43.935000+00:00",
+      "logical_id": "PatriotPotInstanceRole",
+      "status": "UPDATE_IN_PROGRESS",
+      "reason": null
+    },
+    {
+      "ts": "2026-09-19T22:08:00.675000+00:00",
+      "logical_id": "PatriotPotInstanceRole",
+      "status": "UPDATE_COMPLETE",
+      "reason": null
+    },
+    {
+      "ts": "2026-09-19T22:08:02.146000+00:00",
+      "logical_id": "PatriotPotAuthParityAssociation",
+      "status": "CREATE_IN_PROGRESS",
+      "reason": null
+    },
+    {
+      "ts": "2026-09-19T22:08:02.313000+00:00",
+      "logical_id": "PatriotPotEIP",
+      "status": "UPDATE_IN_PROGRESS",
+      "reason": null
+    },
+    {
+      "ts": "2026-09-19T22:08:03.035000+00:00",
+      "logical_id": "PatriotPotAuthParityAssociation",
+      "status": "CREATE_IN_PROGRESS",
+      "reason": "Resource creation Initiated"
+    },
+    {
+      "ts": "2026-09-19T22:08:03.995000+00:00",
+      "logical_id": "PatriotPotEIP",
+      "status": "UPDATE_COMPLETE",
+      "reason": null
+    },
+    {
+      "ts": "2026-09-19T22:08:18.779000+00:00",
+      "logical_id": "PatriotPotAuthParityAssociation",
+      "status": "CREATE_COMPLETE",
+      "reason": null
+    },
+    {
+      "ts": "2026-09-19T22:08:19.836000+00:00",
+      "logical_id": "patriotpot-2026-control-prod",
+      "status": "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS",
+      "reason": null
+    },
+    {
+      "ts": "2026-09-19T22:08:20.765000+00:00",
+      "logical_id": "patriotpot-2026-control-prod",
+      "status": "UPDATE_COMPLETE",
+      "reason": null
+    }
+  ]
+}

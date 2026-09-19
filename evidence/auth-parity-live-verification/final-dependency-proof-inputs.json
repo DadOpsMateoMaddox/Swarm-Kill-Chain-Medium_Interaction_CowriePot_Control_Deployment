@@ -1,0 +1,72 @@
+{
+  "live_role_arn": "arn:aws:iam::706162601288:role/patriotpot-instance-role-production",
+  "live_bucket_policy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "DenyInsecureTransport",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [
+          "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1",
+          "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1/*"
+        ],
+        "Condition": {
+          "Bool": {
+            "aws:SecureTransport": "false"
+          }
+        }
+      },
+      {
+        "Sid": "DenyUnconditionalControlArchiveWrites",
+        "Effect": "Deny",
+        "Principal": {
+          "AWS": "arn:aws:iam::706162601288:role/patriotpot-instance-role-production"
+        },
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1/control/production/sensors/control-0/instances/*/segments/*",
+        "Condition": {
+          "StringNotEquals": {
+            "s3:if-none-match": "*"
+          }
+        }
+      }
+    ]
+  },
+  "resolved_candidate_bucket_policy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "DenyInsecureTransport",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [
+          "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1",
+          "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1/*"
+        ],
+        "Condition": {
+          "Bool": {
+            "aws:SecureTransport": "false"
+          }
+        }
+      },
+      {
+        "Sid": "DenyUnconditionalControlArchiveWrites",
+        "Effect": "Deny",
+        "Principal": {
+          "AWS": "arn:aws:iam::706162601288:role/patriotpot-instance-role-production"
+        },
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1/control/production/sensors/control-0/instances/*/segments/*",
+        "Condition": {
+          "StringNotEquals": {
+            "s3:if-none-match": "*"
+          }
+        }
+      }
+    ]
+  },
+  "refreshed_at_utc": "2026-09-19T22:03:44.859057+00:00"
+}

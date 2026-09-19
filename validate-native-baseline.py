@@ -435,9 +435,20 @@ def validate_behavioral_contract() -> None:
         require(declaration in cfg, f"behavioral declaration missing: {declaration}")
     require("2223" not in cfg, "recovered candidate cfg unexpectedly enables TCP/2223")
 
+    # Auth-parity correction (evidence/AUTH-PARITY-GATE.md): the 10-account
+    # set was a 2026 reconstruction not supported by the recovered 2025
+    # telemetry. The 7 accounts below are the ones the telemetry actually
+    # shows as wildcard-allow in the post-2025-10-16T08:32:07Z steady state;
+    # the remaining repeatedly-observed usernames in the stable
+    # post-transition corpus exhibited deny-only behavior.
     users = (ROOT / "userdb.txt").read_text(encoding="utf-8").splitlines()
-    require(len(users) == 10, "userdb account count changed")
+    require(len(users) == 7, "userdb account count changed")
     require(all(line.endswith(":x:*:") for line in users), "userdb wildcard policy changed")
+    require(
+        {line.split(":")[0] for line in users}
+        == {"root", "admin", "postgres", "mysql", "backup", "deploy", "webuser"},
+        "userdb account set no longer matches the auth-parity-corrected set",
+    )
 
 
 def validate_bundle_replacement_control() -> None:

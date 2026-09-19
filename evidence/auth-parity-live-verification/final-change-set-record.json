@@ -1,0 +1,51 @@
+{
+  "action": "Delete reviewed change set, create fresh final change set (create/review only, NOT executed)",
+  "approved_by_user": "explicit: \"Delete and recreate\"",
+  "method": "boto3 cloudformation delete_change_set + create_change_set (aws CLI binary unavailable in this environment; same patriotpot/us-east-1 profile)",
+  "deleted_change_set": {
+    "id": "arn:aws:cloudformation:us-east-1:706162601288:changeSet/auth-parity-20260919T051512Z/64bba1dc-7994-4892-bdda-834e313b34ec",
+    "status_before_delete": "CREATE_COMPLETE",
+    "execution_status_before_delete": "AVAILABLE",
+    "resources_before_delete": ["EvidenceBucketPolicy", "PatriotPotAuthParityAssociation", "PatriotPotInstanceRole"],
+    "delete_verified": "ChangeSetNotFound",
+    "forensic_note": "Full describe output for this artifact is preserved locally in change-set-plain.json and change-set-property-values.json; deleting the AWS-side object did not lose the record.",
+    "stack_resources_touched_by_delete": "none - delete_change_set removes only the review artifact"
+  },
+  "created_change_set": {
+    "name": "auth-parity-final-20260919T220333Z",
+    "id": "arn:aws:cloudformation:us-east-1:706162601288:changeSet/auth-parity-final-20260919T220333Z/2f157f47-dd1b-4ae2-ac8d-28e1f9aed4f4",
+    "status": "CREATE_COMPLETE",
+    "execution_status": "AVAILABLE",
+    "executed": false,
+    "candidate_template_sha256": "f583e85c0dde0ed4c108d271c6f34e5c6af97af80459dd05cec2894f8266e28e",
+    "auth_parity_bundle_id": "8f4f8645f05f25392adc9cb0963f7a60adaf677d2195dfd588a83c433c6365a6",
+    "userdb_txt_sha256": "8f4f8645f05f25392adc9cb0963f7a60adaf677d2195dfd588a83c433c6365a6",
+    "resource_inventory": [
+      { "LogicalResourceId": "EvidenceBucketPolicy", "Action": "Modify", "Replacement": "False" },
+      { "LogicalResourceId": "PatriotPotAuthParityAssociation", "Action": "Add", "Replacement": "N/A" },
+      { "LogicalResourceId": "PatriotPotInstanceRole", "Action": "Modify", "Replacement": "False" }
+    ]
+  },
+  "pre_execution_reverification": {
+    "candidate_sha256_matches_record": true,
+    "published_bundle_still_present": true,
+    "published_bundle_version_id": "qdTGA18YqBsROKkXI0kAr4DvyUBbIzIA",
+    "published_bundle_metadata_sha256_matches": true,
+    "parameter_scope_check": "PASS"
+  },
+  "guard_result": {
+    "assert_auth_parity_change_set_scope": "PASS",
+    "proof_inputs_refreshed_at_guard_time": true,
+    "live_role_arn": "arn:aws:iam::706162601288:role/patriotpot-instance-role-production",
+    "evidence_bucket_policy_verdict": "DEPENDENCY_REEVALUATION_ONLY",
+    "control_check_without_proof_data": "correctly failed closed (not a blanket allowance)"
+  },
+  "expected_s3_arn": "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1/bootstrap/8f4f8645f05f25392adc9cb0963f7a60adaf677d2195dfd588a83c433c6365a6/userdb.txt",
+  "scope_confirmation": {
+    "execute_change_set_called": false,
+    "control_0_touched": false,
+    "h2_staged": false,
+    "stack_status_unchanged": true
+  },
+  "state": "READY_FOR_EXECUTION_DECISION"
+}

@@ -1,0 +1,89 @@
+{
+  "physical_role_name": "patriotpot-instance-role-production",
+  "live_role_arn": "arn:aws:iam::706162601288:role/patriotpot-instance-role-production",
+  "live_role_path": "/",
+  "live_role_create_date": "2026-09-13T03:31:36+00:00",
+  "live_assume_role_policy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "Service": "ec2.amazonaws.com"
+        },
+        "Action": "sts:AssumeRole"
+      }
+    ]
+  },
+  "expected_role_name_from_template": "patriotpot-instance-role-production",
+  "role_name_match": true,
+  "live_bucket_policy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "DenyInsecureTransport",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [
+          "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1",
+          "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1/*"
+        ],
+        "Condition": {
+          "Bool": {
+            "aws:SecureTransport": "false"
+          }
+        }
+      },
+      {
+        "Sid": "DenyUnconditionalControlArchiveWrites",
+        "Effect": "Deny",
+        "Principal": {
+          "AWS": "arn:aws:iam::706162601288:role/patriotpot-instance-role-production"
+        },
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1/control/production/sensors/control-0/instances/*/segments/*",
+        "Condition": {
+          "StringNotEquals": {
+            "s3:if-none-match": "*"
+          }
+        }
+      }
+    ]
+  },
+  "resolved_candidate_bucket_policy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "DenyInsecureTransport",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [
+          "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1",
+          "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1/*"
+        ],
+        "Condition": {
+          "Bool": {
+            "aws:SecureTransport": "false"
+          }
+        }
+      },
+      {
+        "Sid": "DenyUnconditionalControlArchiveWrites",
+        "Effect": "Deny",
+        "Principal": {
+          "AWS": "arn:aws:iam::706162601288:role/patriotpot-instance-role-production"
+        },
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::patriotpot-evidence-706162601288-us-east-1/control/production/sensors/control-0/instances/*/segments/*",
+        "Condition": {
+          "StringNotEquals": {
+            "s3:if-none-match": "*"
+          }
+        }
+      }
+    ]
+  },
+  "policies_match": true
+}

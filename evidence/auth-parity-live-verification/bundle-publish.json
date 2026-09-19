@@ -1,0 +1,26 @@
+{
+  "action": "Publish-AuthParityBundle (bundle stage only)",
+  "approved_by_user_at": "explicit GO: \"GO for Publish-AuthParityBundle -- bundle stage only.\"",
+  "method": "boto3 s3.put_object (aws CLI binary unavailable in this environment; same patriotpot/us-east-1 profile boto3 would use via Invoke-Aws)",
+  "target_bucket": "patriotpot-evidence-706162601288-us-east-1",
+  "target_key": "bootstrap/8f4f8645f05f25392adc9cb0963f7a60adaf677d2195dfd588a83c433c6365a6/userdb.txt",
+  "upload_sha256": "8f4f8645f05f25392adc9cb0963f7a60adaf677d2195dfd588a83c433c6365a6",
+  "upload_size_bytes": 83,
+  "put_result": "created",
+  "put_etag": "\"f82d8f41567bf4ccfabe114bd4f8c97b\"",
+  "put_version_id": "qdTGA18YqBsROKkXI0kAr4DvyUBbIzIA",
+  "head_verification": {
+    "metadata_sha256": "8f4f8645f05f25392adc9cb0963f7a60adaf677d2195dfd588a83c433c6365a6",
+    "matches_expected": true,
+    "version_id": "qdTGA18YqBsROKkXI0kAr4DvyUBbIzIA",
+    "etag": "\"f82d8f41567bf4ccfabe114bd4f8c97b\"",
+    "content_length": 83,
+    "last_modified_utc": "2026-09-19T05:09:16+00:00"
+  },
+  "scope_confirmation": {
+    "cloudformation_touched": false,
+    "change_set_created": false,
+    "control_0_touched": false,
+    "h2_staged": false
+  }
+}
