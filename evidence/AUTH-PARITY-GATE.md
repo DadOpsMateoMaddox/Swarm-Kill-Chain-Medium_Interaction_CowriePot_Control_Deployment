@@ -695,3 +695,45 @@ the dataset — no Cowrie event can be recorded while the listener is down,
 so the gap contains no events to misattribute — but the transition window
 should be read as "T_RESTART_INITIATED → first verified post-restart
 listener bind", not as an 86 ms window.
+
+### 12.6 Instrumentation fix — SOURCE ONLY, NOT DEPLOYED
+
+`INSTRUMENTATION_FIX_STATUS=SOURCE_ONLY_NOT_DEPLOYED`
+
+Both defects in 12.5 are corrected in source (the template's
+`PatriotPotAuthParityAssociation` block and, byte-identically, the
+`Add-AuthParityTemplatePatch` generator that reproduces it). **No
+CloudFormation change set was created for this fix and it is not deployed.**
+A second stack update immediately after establishing Epoch B would buy
+nothing and would introduce a second configuration boundary into a window
+that currently has exactly one.
+
+Corrections:
+
+1. `read_main_pid()` parses `systemctl show cowrie.service -p MainPID` into
+   `KEY=VALUE` form via `sed` (no `--value`, which systemd 219 lacks) and the
+   result is required to match `^[0-9]+$`. A non-numeric read is now
+   `AUTH_PARITY_FATAL` and aborts, instead of silently recording "unknown".
+   The pre-restart listener check is likewise fatal if absent.
+2. The post-restart listener is polled, not sampled once: 250 ms × 40
+   (10 s bound). Two new fields are emitted —
+   `AUTH_PARITY_LISTENER_REBIND_VERIFIED_AT` and
+   `AUTH_PARITY_LISTENER_REBIND_LATENCY_MS`. Failure to rebind within the
+   bound is `AUTH_PARITY_FATAL` and aborts, rather than recording
+   `LISTENER_AFTER=none` and continuing.
+
+**Semantic change to T0, applying to future runs only.**
+`AUTH_PARITY_T_RESTART_ACTIVE` is now the *verified socket rebind*, not the
+moment `systemctl is-active` returned. This is the more defensible boundary:
+it is the instant Cowrie can actually accept connections again. The
+2026-09-19 execution recorded T0 under the old semantics
+(`22:08:04.614016217Z` = `is-active` returned); the true rebind was
+marginally later and was not captured. As noted in 12.5 this creates no
+dataset ambiguity, because no Cowrie event can be recorded while the
+listener is down.
+
+**Deployment path for this fix:** do not deploy it on its own. If a rollback
+or any future auth-parity change becomes necessary, generate that candidate
+from the *then-current live template* (never from the working tree, which
+now intentionally differs from deployed) and carry the corrected
+instrumentation in that specifically reviewed change set.

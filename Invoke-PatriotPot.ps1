@@ -704,22 +704,42 @@ function Add-AuthParityTemplatePatch([string]$BaseTemplateText) {
         commands:
           - !Sub |
               set -euo pipefail
+              # Self-instrumented for the Epoch A -> Epoch B boundary record:
+              # every line below prefixed AUTH_PARITY_ is a required evidence
+              # field (evidence/AUTH-PARITY-GATE.md section 10) captured at
+              # the moment it actually occurs, in SSM's own command output,
+              # rather than reconstructed after the fact from side channels.
               echo "AUTH_PARITY_T_PRE=`$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
 
               pre_hash="absent"
               if [[ -f /opt/cowrie/etc/userdb.txt ]]; then
                 pre_hash="`$(sha256sum /opt/cowrie/etc/userdb.txt | cut -d' ' -f1)"
               fi
-              echo "AUTH_PARITY_PRE_USERDB_SHA256=`${!pre_hash}"
+              echo "AUTH_PARITY_PRE_USERDB_SHA256=`$pre_hash"
 
-              pid_before="`$(systemctl show -p MainPID --value cowrie.service 2>/dev/null || echo unknown)"
-              echo "AUTH_PARITY_COWRIE_PID_BEFORE=`${!pid_before}"
+              # systemd 219 on AL2 has no ``--value``; parse the KEY=VALUE form
+              # and require a numeric result rather than letting a failed
+              # query silently degrade to "unknown".
+              read_main_pid() {
+                systemctl show cowrie.service -p MainPID 2>/dev/null | sed -n 's/^MainPID=//p'
+              }
+
+              pid_before="`$(read_main_pid)"
+              if ! [[ "`$pid_before" =~ ^[0-9]+`$ ]]; then
+                echo "AUTH_PARITY_FATAL=non-numeric MainPID before restart: '`$pid_before'" >&2
+                exit 1
+              fi
+              echo "AUTH_PARITY_COWRIE_PID_BEFORE=`$pid_before"
 
               listener_before="`$(ss -ltn 'sport = :2222' 2>/dev/null | tail -n +2 || true)"
-              echo "AUTH_PARITY_LISTENER_BEFORE=`${!listener_before:-none}"
+              if [[ -z "`$listener_before" ]]; then
+                echo "AUTH_PARITY_FATAL=no listener on :2222 before restart" >&2
+                exit 1
+              fi
+              echo "AUTH_PARITY_LISTENER_BEFORE=`$listener_before"
 
               active_conn_before="`$(ss -tn state established 'sport = :2222' 2>/dev/null | tail -n +2 | wc -l)"
-              echo "AUTH_PARITY_ACTIVE_CONNECTIONS_BEFORE=`${!active_conn_before}"
+              echo "AUTH_PARITY_ACTIVE_CONNECTIONS_BEFORE=`$active_conn_before"
 
               install -d -m 0755 -o root -g root /opt/patriotpot-bootstrap
               AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
@@ -742,19 +762,47 @@ function Add-AuthParityTemplatePatch([string]$BaseTemplateText) {
               echo "AUTH_PARITY_T_INSTALL=`$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
               echo "AUTH_PARITY_POST_USERDB_SHA256=`$(sha256sum /opt/cowrie/etc/userdb.txt | cut -d' ' -f1)"
 
+              restart_initiated_ms="`$(date -u +%s%3N)"
               echo "AUTH_PARITY_T_RESTART_INITIATED=`$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
               systemctl try-restart cowrie.service
               systemctl is-active --quiet cowrie.service
-              echo "AUTH_PARITY_T_RESTART_ACTIVE=`$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
 
-              pid_after="`$(systemctl show -p MainPID --value cowrie.service 2>/dev/null || echo unknown)"
-              echo "AUTH_PARITY_COWRIE_PID_AFTER=`${!pid_after}"
+              # ``is-active`` returning is NOT the same as Cowrie accepting
+              # connections again: it is a Twisted app and rebinds the socket
+              # a moment later. Poll for the actual rebind (250ms x 40 = 10s)
+              # and treat failure to rebind as a real failure rather than
+              # recording "none" and continuing. T_RESTART_ACTIVE -- the
+              # Epoch boundary -- is the verified rebind, not is-active.
+              rebind_at=""
+              rebind_ms=""
+              for _ in `$(seq 1 40); do
+                if ss -ltn 'sport = :2222' 2>/dev/null | tail -n +2 | grep -q . ; then
+                  rebind_at="`$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+                  rebind_ms="`$(date -u +%s%3N)"
+                  break
+                fi
+                sleep 0.25
+              done
+              if [[ -z "`$rebind_at" ]]; then
+                echo "AUTH_PARITY_FATAL=cowrie did not rebind :2222 within 10s of restart" >&2
+                exit 1
+              fi
+              echo "AUTH_PARITY_LISTENER_REBIND_VERIFIED_AT=`$rebind_at"
+              echo "AUTH_PARITY_LISTENER_REBIND_LATENCY_MS=`$((rebind_ms - restart_initiated_ms))"
+              echo "AUTH_PARITY_T_RESTART_ACTIVE=`$rebind_at"
+
+              pid_after="`$(read_main_pid)"
+              if ! [[ "`$pid_after" =~ ^[0-9]+`$ ]]; then
+                echo "AUTH_PARITY_FATAL=non-numeric MainPID after restart: '`$pid_after'" >&2
+                exit 1
+              fi
+              echo "AUTH_PARITY_COWRIE_PID_AFTER=`$pid_after"
 
               listener_after="`$(ss -ltn 'sport = :2222' 2>/dev/null | tail -n +2 || true)"
-              echo "AUTH_PARITY_LISTENER_AFTER=`${!listener_after:-none}"
+              echo "AUTH_PARITY_LISTENER_AFTER=`$listener_after"
 
               active_conn_after="`$(ss -tn state established 'sport = :2222' 2>/dev/null | tail -n +2 | wc -l)"
-              echo "AUTH_PARITY_ACTIVE_CONNECTIONS_AFTER=`${!active_conn_after}"
+              echo "AUTH_PARITY_ACTIVE_CONNECTIONS_AFTER=`$active_conn_after"
 
 "@
     $text = Set-AnchoredInsertion $text $assocAnchor ($assocAnchor + $assocInsert) "PatriotPotAuthParityAssociation resource"
