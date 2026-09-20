@@ -45,7 +45,40 @@ Parameters:
   DiscordMonitorSha256:
     Type: String
     AllowedPattern: '^[0-9a-f]{64}$'
-    Description: SHA-256 for the direct public-HTTPS Discord monitor in FirewallBundleId
+    Description: >
+      SHA-256 for the direct public-HTTPS Discord monitor in FirewallBundleId.
+      Consumed ONLY by PatriotPotInstanceV2's UserData (first-boot
+      provisioning) -- never by PatriotPotDiscordMonitorAssociation, which
+      uses H2DiscordMonitorSha256/H2BundleId instead. This pairing must
+      never change independent of a deliberate first-boot-path update,
+      because UserData is a replacement-triggering property on
+      AWS::EC2::Instance.
+
+  H2BundleId:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}$'
+    Description: >
+      Content-addressed bundle supplying every H2 sidecar artifact
+      (discord-monitor.py, session_cluster.py, discord_rate_governor.py,
+      and the threat_intel package) to PatriotPotDiscordMonitorAssociation
+      ONLY. Deliberately distinct from FirewallBundleId/BootstrapBundleId:
+      neither this parameter nor H2DiscordMonitorSha256 is referenced
+      anywhere in PatriotPotInstanceV2's Properties (UserData included), so
+      publishing a new H2Bundle and updating this value never triggers EC2
+      instance replacement. The original patriotpot-egress-firewall.sh/
+      .service/discord-monitor.py grants under FirewallBundleId are left
+      untouched for the same reason UserData itself is untouched -- a future
+      fresh instance's first boot still needs them.
+
+  H2DiscordMonitorSha256:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}$'
+    Description: >
+      SHA-256 for discord-monitor.py in H2BundleId. Independent of
+      DiscordMonitorSha256 (the UserData-embedded, FirewallBundleId-scoped
+      first-boot pairing, which stays frozen): this is the value
+      PatriotPotDiscordMonitorAssociation actually verifies against on
+      every post-boot run, so it is what tracks the current H2 code.
 
   AuthParityBundleId:
     Type: String
@@ -81,6 +114,18 @@ Parameters:
     Description: >
       Existing SSM SecureString parameter read locally by the Discord monitor.
       The value is never passed through CloudFormation or written to source.
+      Carries the legacy/raw per-event notification stream only.
+
+  DiscordIntelWebhookParameterName:
+    Type: String
+    Default: /patriotpot/2026-control/discord-intel-webhook
+    AllowedPattern: '^/[A-Za-z0-9_.:/-]+$'
+    Description: >
+      Existing SSM SecureString parameter read locally by the Discord monitor
+      for the H2 clustered/enriched intelligence summary stream. Independent
+      of DiscordWebhookParameterName: its own credential, queue, and rate
+      governor, so an outage on one channel never stalls the other. The value
+      is never passed through CloudFormation or written to source.
 
   InstanceType:
     Type: String
@@ -211,25 +256,34 @@ Resources:
                 # privilege expansion, not merely a maintenance convenience.
                 # This list must be kept in sync with the association's
                 # fetch_h2_support_file calls below.
+                #
+                # The FirewallBundleId-scoped discord-monitor.py entry below
+                # is UNCHANGED and left in place deliberately: it is what
+                # PatriotPotInstanceV2's UserData reads at first boot, and
+                # UserData is a replacement-triggering property -- neither
+                # this grant nor DiscordMonitorSha256's value may ever move.
+                # PatriotPotDiscordMonitorAssociation's OWN post-boot fetch
+                # uses the separate H2BundleId-scoped entry further below.
                 Resource:
                   - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/discord-monitor.py'
                   - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/patriotpot-egress-firewall.sh'
                   - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/patriotpot-egress-firewall.service'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/session_cluster.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/discord_rate_governor.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel__init__.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_observables.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_parameter_store.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_cache.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_provider_result.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_http_client.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_greynoise.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_virustotal.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_shodan.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_broker.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_rate_governor.py'
-                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_worker.py'
                   - !Sub '${EvidenceBucket.Arn}/bootstrap/${AuthParityBundleId}/userdb.txt'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/discord-monitor.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/session_cluster.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/discord_rate_governor.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel__init__.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel_observables.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel_parameter_store.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel_cache.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel_provider_result.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel_http_client.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel_greynoise.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel_virustotal.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel_shodan.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel_broker.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel_rate_governor.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${H2BundleId}/threat_intel_worker.py'
 
         - PolicyName: PatriotPotEvidenceArchive
           PolicyDocument:
@@ -280,7 +334,11 @@ Resources:
               - Effect: Allow
                 Action:
                   - 'ssm:GetParameter'
-                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${DiscordWebhookParameterName}'
+                # Two explicit, independent parameter ARNs: legacy raw
+                # webhook and H2 intel webhook. Never a prefix wildcard.
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${DiscordWebhookParameterName}'
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${DiscordIntelWebhookParameterName}'
 
         - PolicyName: PatriotPotThreatIntelCredential
           PolicyDocument:
@@ -509,6 +567,7 @@ Resources:
             COWRIE_HOST_KEY_SECRET='${CowrieHostKeySecret}' \
             COWRIE_HOST_KEY_VERSION_ID='${CowrieHostKeyVersionId}' \
             DISCORD_PARAMETER_NAME='${DiscordWebhookParameterName}' \
+            DISCORD_INTEL_PARAMETER_NAME='${DiscordIntelWebhookParameterName}' \
             EVIDENCE_BUCKET='${EvidenceBucket}' \
             EVIDENCE_PREFIX='control/${Environment}/sensors/control-0' \
             AWS_PROFILE='patriotpot' \
@@ -644,13 +703,13 @@ Resources:
               install -d -m 0755 -o root -g root /opt/patriotpot-discord
               AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
                 --bucket '${EvidenceBucket}' \
-                --key 'bootstrap/${FirewallBundleId}/discord-monitor.py' \
+                --key 'bootstrap/${H2BundleId}/discord-monitor.py' \
                 /opt/patriotpot-discord/discord-monitor.py.new \
                 --output json \
                 --profile patriotpot \
                 --region us-east-1
               printf '%s  %s\n' \
-                '${DiscordMonitorSha256}' \
+                '${H2DiscordMonitorSha256}' \
                 /opt/patriotpot-discord/discord-monitor.py.new |
                 sha256sum --check --status
               install -m 0755 -o root -g root \
@@ -665,7 +724,7 @@ Resources:
                 local destination="$3"
                 AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
                   --bucket '${EvidenceBucket}' \
-                  --key "bootstrap/${FirewallBundleId}/$asset_name" \
+                  --key "bootstrap/${H2BundleId}/$asset_name" \
                   "/opt/patriotpot-discord/$asset_name.new" \
                   --output json \
                   --profile patriotpot \
@@ -717,6 +776,21 @@ Resources:
               fetch_h2_support_file threat_intel_worker.py \
                 68d5cf8d6d2cab24e25a83d6ccc987d38cbf61784fa8be75909eb31a0a65e6e1 \
                 /usr/local/libexec/threat_intel/worker.py
+              # Webhook separation: Control-0 was already bootstrapped before
+              # DISCORD_INTEL_PARAMETER_NAME existed, so this association is
+              # what teaches the running instance about the second,
+              # independent intel-channel credential. Idempotent: replaces
+              # any prior value of this one key, leaves every other line
+              # (including the legacy DISCORD_PARAMETER_NAME) untouched.
+              if [[ -f /etc/patriotpot/discord.env ]]; then
+                grep -v '^DISCORD_INTEL_PARAMETER_NAME=' /etc/patriotpot/discord.env \
+                  >/etc/patriotpot/discord.env.new || true
+                printf 'DISCORD_INTEL_PARAMETER_NAME=%s\n' \
+                  '${DiscordIntelWebhookParameterName}' >>/etc/patriotpot/discord.env.new
+                chmod 0640 /etc/patriotpot/discord.env.new
+                chown root:patriot-discord /etc/patriotpot/discord.env.new
+                mv /etc/patriotpot/discord.env.new /etc/patriotpot/discord.env
+              fi
               systemctl try-restart patriotpot-discord.service
               systemctl is-active --quiet patriotpot-discord.service
 

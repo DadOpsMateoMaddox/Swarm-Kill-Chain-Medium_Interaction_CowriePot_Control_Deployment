@@ -10,10 +10,13 @@
 # AuthParity-instrumentation-hitchhiking prohibition and its proof-gated
 # -IncludeAuthParityInstrumentationFix exception, the resource allowlist --
 # plus the H2 template patch (Add-H2TemplatePatch, run against the real live
-# baseline commit) and Assert-H2TemplateSnapshotParametersAreAccountedFor.
-# New-H2ChangeSet's and New-H2TemplateSnapshot's own AWS-calling
-# orchestration is not exercised here, consistent with the auth-parity
-# suite's stated scope.
+# baseline commit), Assert-H2TemplateSnapshotParametersAreAccountedFor, and
+# Assert-H2BundleIdNotInInstanceSubtree (v3: the H2BundleId/
+# H2DiscordMonitorSha256 artifact-bundle separation from
+# FirewallBundleId/BootstrapBundleId -- the actual safety property that
+# design exists to guarantee, checked structurally). New-H2ChangeSet's and
+# New-H2TemplateSnapshot's own AWS-calling orchestration is not exercised
+# here, consistent with the auth-parity suite's stated scope.
 
 $ScriptPath = Join-Path $PSScriptRoot ".." "Invoke-PatriotPot.ps1"
 
@@ -31,6 +34,7 @@ $FunctionsUnderTest = @(
     "Test-ChangeIsHashSubstitutionOnly",
     "Test-EvidenceBucketPolicyChangeIsDependencyOnly",
     "Assert-H2TemplateSnapshotParametersAreAccountedFor",
+    "Assert-H2BundleIdNotInInstanceSubtree",
     "Assert-H2CandidateScope",
     "Add-H2TemplatePatch"
 )
@@ -312,5 +316,77 @@ Describe "Add-H2TemplatePatch (against the real retrieved live-deployed template
         } finally {
             Remove-Item -LiteralPath $tempPath -ErrorAction SilentlyContinue
         }
+    }
+
+    It "the real candidate declares H2BundleId and H2DiscordMonitorSha256 as parameters" {
+        $patched = Add-H2TemplatePatch $BaselineText
+        (@([regex]::Matches($patched, "(?m)^  H2BundleId:\s*`$"))).Count | Should Be 1
+        (@([regex]::Matches($patched, "(?m)^  H2DiscordMonitorSha256:\s*`$"))).Count | Should Be 1
+    }
+
+    It "PatriotPotDiscordMonitorAssociation references H2BundleId and H2DiscordMonitorSha256" {
+        $patched = Add-H2TemplatePatch $BaselineText
+        $assocSubtree = Get-ResourceSubtreeText $patched "PatriotPotDiscordMonitorAssociation"
+        ($assocSubtree -match [regex]::Escape('${H2BundleId}')) | Should Be $true
+        ($assocSubtree -match [regex]::Escape('${H2DiscordMonitorSha256}')) | Should Be $true
+    }
+
+    It "PatriotPotInstanceRole grants H2BundleId access for all 15 H2 sidecar files, and leaves the original FirewallBundleId-scoped discord-monitor.py/firewall grants untouched" {
+        $patched = Add-H2TemplatePatch $BaselineText
+        $roleSubtree = Get-ResourceSubtreeText $patched "PatriotPotInstanceRole"
+        foreach ($file in @(
+            "discord-monitor.py", "session_cluster.py", "discord_rate_governor.py",
+            "threat_intel__init__.py", "threat_intel_worker.py"
+        )) {
+            ($roleSubtree -match [regex]::Escape("bootstrap/`${H2BundleId}/$file")) | Should Be $true
+        }
+        # original H1-era grants, unrelated to H2BundleId, must be unchanged
+        ($roleSubtree -match [regex]::Escape('bootstrap/${FirewallBundleId}/discord-monitor.py')) | Should Be $true
+        ($roleSubtree -match [regex]::Escape('bootstrap/${FirewallBundleId}/patriotpot-egress-firewall.sh')) | Should Be $true
+        ($roleSubtree -match [regex]::Escape('bootstrap/${FirewallBundleId}/patriotpot-egress-firewall.service')) | Should Be $true
+    }
+}
+
+Describe "Assert-H2BundleIdNotInInstanceSubtree" {
+    $FixturePath = Join-Path $PSScriptRoot "fixtures" "live-deployed-template-20260919.yaml"
+    $BaselineText = [System.IO.File]::ReadAllText($FixturePath) -replace "`r`n", "`n"
+
+    It "passes on the real reviewed H2 candidate (H2BundleId/H2DiscordMonitorSha256 confirmed absent from PatriotPotInstanceV2)" {
+        $patched = Add-H2TemplatePatch $BaselineText
+        { Assert-H2BundleIdNotInInstanceSubtree $patched } | Should Not Throw
+    }
+
+    It "fails closed if H2BundleId leaks into PatriotPotInstanceV2's subtree" {
+        $patched = Add-H2TemplatePatch $BaselineText
+        # Simulate the exact hazard this function exists to catch: someone
+        # (accidentally) wires H2BundleId into UserData.
+        $contaminated = $patched -replace (
+            [regex]::Escape('AWS::EC2::Instance')
+        ), "AWS::EC2::Instance`n      # planted for the test: `${H2BundleId}"
+        { Assert-H2BundleIdNotInInstanceSubtree $contaminated } | Should Throw "H2BundleId"
+    }
+
+    It "fails closed if H2DiscordMonitorSha256 leaks into PatriotPotInstanceV2's subtree" {
+        $patched = Add-H2TemplatePatch $BaselineText
+        $contaminated = $patched -replace (
+            [regex]::Escape('AWS::EC2::Instance')
+        ), "AWS::EC2::Instance`n      # planted for the test: `${H2DiscordMonitorSha256}"
+        { Assert-H2BundleIdNotInInstanceSubtree $contaminated } | Should Throw "H2DiscordMonitorSha256"
+    }
+
+    It "does not false-positive on the unrelated, frozen BootstrapBundleId that legitimately remains in PatriotPotInstanceV2's UserData" {
+        # BootstrapBundleId is UserData's own bundle parameter (per
+        # New-ReviewedChangeSet's requireInstanceReplacement logic).
+        # FirewallBundleId/DiscordMonitorSha256, by contrast, belong to the
+        # SEPARATE PatriotPotEgressFirewallAssociation and
+        # PatriotPotDiscordMonitorAssociation resources (both
+        # AWS::SSM::Association, no replacement semantics) -- confirmed
+        # here directly with the real Get-ResourceSubtreeText, not assumed.
+        $patched = Add-H2TemplatePatch $BaselineText
+        $instanceSubtree = Get-ResourceSubtreeText $patched "PatriotPotInstanceV2"
+        ($instanceSubtree -match [regex]::Escape('${BootstrapBundleId}')) | Should Be $true
+        ($instanceSubtree -match [regex]::Escape('${FirewallBundleId}')) | Should Be $false
+        ($instanceSubtree -match [regex]::Escape('${DiscordMonitorSha256}')) | Should Be $false
+        { Assert-H2BundleIdNotInInstanceSubtree $patched } | Should Not Throw
     }
 }

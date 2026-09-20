@@ -106,6 +106,35 @@ function Get-AuthParityAssetMap {
     }
 }
 
+function Get-H2AssetMap {
+    # H2's own sidecar bundle, deliberately separate from Get-AssetMap /
+    # Get-FirewallAssetMap / Get-AuthParityAssetMap: publishes under
+    # H2BundleId, which is referenced ONLY by PatriotPotDiscordMonitorAssociation
+    # -- never by PatriotPotInstanceV2's UserData (see gates/h2/
+    # h2-template-patch.json's design_note). discord-monitor.py is this
+    # bundle's own entrypoint file, so H2BundleId = its SHA-256, matching
+    # this project's existing convention that a bundle's ID is the hash of
+    # the primary/entrypoint file it contains (Publish-BootstrapBundle ->
+    # bootstrap-native.sh, Publish-AuthParityBundle -> userdb.txt).
+    return [ordered]@{
+        "discord-monitor.py"                = Join-Path $NativeRoot "discord-monitor.py"
+        "session_cluster.py"                = Join-Path $NativeRoot "session_cluster.py"
+        "discord_rate_governor.py"          = Join-Path $NativeRoot "discord_rate_governor.py"
+        "threat_intel__init__.py"           = Join-Path $NativeRoot "threat_intel\__init__.py"
+        "threat_intel_observables.py"       = Join-Path $NativeRoot "threat_intel\observables.py"
+        "threat_intel_parameter_store.py"   = Join-Path $NativeRoot "threat_intel\parameter_store.py"
+        "threat_intel_cache.py"             = Join-Path $NativeRoot "threat_intel\cache.py"
+        "threat_intel_provider_result.py"   = Join-Path $NativeRoot "threat_intel\provider_result.py"
+        "threat_intel_http_client.py"       = Join-Path $NativeRoot "threat_intel\http_client.py"
+        "threat_intel_greynoise.py"         = Join-Path $NativeRoot "threat_intel\greynoise.py"
+        "threat_intel_virustotal.py"        = Join-Path $NativeRoot "threat_intel\virustotal.py"
+        "threat_intel_shodan.py"            = Join-Path $NativeRoot "threat_intel\shodan.py"
+        "threat_intel_broker.py"            = Join-Path $NativeRoot "threat_intel\broker.py"
+        "threat_intel_rate_governor.py"     = Join-Path $NativeRoot "threat_intel\rate_governor.py"
+        "threat_intel_worker.py"            = Join-Path $NativeRoot "threat_intel\worker.py"
+    }
+}
+
 function Assert-AssetIntegrity {
     $assets = Get-AssetMap
     $missing = @($assets.GetEnumerator() | Where-Object { -not (Test-Path -LiteralPath $_.Value) })
@@ -293,6 +322,23 @@ function Publish-AuthParityBundle([string]$Bucket) {
         BundleId = $bundleId
         UserdbSha256 = $userdbHash
         Prefix = $prefix
+    }
+}
+
+function Publish-H2Bundle([string]$Bucket) {
+    $assets = Get-H2AssetMap
+    $entrypointHash = Get-Sha256 $assets["discord-monitor.py"]
+    $bundleId = $entrypointHash
+    $prefix = "bootstrap/$bundleId"
+    foreach ($asset in $assets.GetEnumerator()) {
+        $hash = Get-Sha256 $asset.Value
+        Publish-Asset $Bucket "$prefix/$($asset.Name)" $asset.Value $hash
+    }
+    return [pscustomobject]@{
+        BundleId = $bundleId
+        DiscordMonitorSha256 = $entrypointHash
+        Prefix = $prefix
+        AssetCount = $assets.Count
     }
 }
 
@@ -527,28 +573,34 @@ function New-H2ChangeSet(
     $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
     $name = "h2-$timestamp"
 
+    # $Bundle is a Publish-H2Bundle result (BundleId/DiscordMonitorSha256),
+    # never Publish-BootstrapBundle's -- H2BundleId/H2DiscordMonitorSha256
+    # are the only two parameters this function ever supplies a real value
+    # for, besides DiscordIntelWebhookParameterName. EVERY other existing
+    # parameter (FirewallBundleId, BootstrapBundleId, DiscordMonitorSha256,
+    # the firewall script hashes, etc.) stays UsePreviousValue=true,
+    # unconditionally -- this gate must never touch a UserData-embedded
+    # value, by construction, not by coincidence of what happens to be
+    # passed in.
     $templateParamNames = Get-TemplateParameterNames $TemplateSnapshot.Path
-    $allowedNew = @("DiscordIntelWebhookParameterName")
+    $suppliedValues = @{
+        "DiscordIntelWebhookParameterName" = $DiscordIntelWebhookParameterName
+        "H2BundleId"                       = $Bundle.BundleId
+        "H2DiscordMonitorSha256"           = $Bundle.DiscordMonitorSha256
+    }
     $parameters = @()
     foreach ($paramName in $templateParamNames) {
-        if ($allowedNew -contains $paramName) {
-            continue
-        }
-        if ($paramName -eq "FirewallBundleId" -or $paramName -eq "BootstrapBundleId") {
-            $parameters += "ParameterKey=$paramName,ParameterValue=$($Bundle.BundleId)"
-        } elseif ($paramName -eq "BootstrapScriptSha256") {
-            $parameters += "ParameterKey=$paramName,ParameterValue=$($Bundle.BootstrapSha256)"
-        } elseif ($paramName -eq "FirewallScriptSha256") {
-            $parameters += "ParameterKey=$paramName,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'patriotpot-egress-firewall.sh'))"
-        } elseif ($paramName -eq "FirewallUnitSha256") {
-            $parameters += "ParameterKey=$paramName,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'patriotpot-egress-firewall.service'))"
-        } elseif ($paramName -eq "DiscordMonitorSha256") {
-            $parameters += "ParameterKey=$paramName,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'discord-monitor.py'))"
+        if ($suppliedValues.ContainsKey($paramName)) {
+            $parameters += "ParameterKey=$paramName,ParameterValue=$($suppliedValues[$paramName])"
         } else {
             $parameters += "ParameterKey=$paramName,UsePreviousValue=true"
         }
     }
-    $parameters += "ParameterKey=DiscordIntelWebhookParameterName,ParameterValue=$DiscordIntelWebhookParameterName"
+    foreach ($required in $suppliedValues.Keys) {
+        if ($templateParamNames -notcontains $required) {
+            throw "H2 template snapshot does not declare expected parameter '$required'; candidate template does not match the reviewed H2 design. Fail closed."
+        }
+    }
 
     $response = Invoke-Aws cloudformation create-change-set `
         --stack-name $StackName `
@@ -856,13 +908,14 @@ function Add-AuthParityTemplatePatch([string]$BaseTemplateText) {
 }
 
 function Add-H2TemplatePatch([string]$BaseTemplateText) {
-    # Replays exactly the reviewed H2 template diff (gates/h2/h2-template-patch.json,
+    # Replays exactly the reviewed H2 template diff (gates/h2/h2-template-patch.json v3,
     # verified by residue-diff against the working tree) onto a clean live-deployed
-    # base -- never onto this working tree's file directly, and UserData is
-    # deliberately excluded (gates/h2/h2-template-patch.json excluded_entries:
-    # H2-U1-userdata-intel-parameter -- UserData is a replacement-triggering
-    # property on AWS::EC2::Instance; the running instance already receives
-    # DISCORD_INTEL_PARAMETER_NAME via the discord.env patch in H2-A1).
+    # base -- never onto this working tree's file directly. UserData is deliberately
+    # excluded (H2-U1, excluded_entries), and H2BundleId/H2DiscordMonitorSha256 are
+    # referenced ONLY by PatriotPotDiscordMonitorAssociation -- never by
+    # PatriotPotInstanceV2's UserData, so publishing a new H2Bundle never triggers
+    # instance replacement (verified structurally, not merely assumed -- see
+    # gates/h2/h2-template-patch.json's design_note).
     # Each anchor must occur exactly once in the base text.
     $text = $BaseTemplateText -replace "`r`n", "`n"
 
@@ -891,6 +944,56 @@ function Add-H2TemplatePatch([string]$BaseTemplateText) {
 "@
     $text = Set-AnchoredInsertion $text $H2_P1_intel_webhook_parameter_find $H2_P1_intel_webhook_parameter_replace "H2-P1-intel-webhook-parameter"
 
+    # H2-P2-h2-bundle-parameters: Add H2BundleId/H2DiscordMonitorSha256, and extend DiscordMonitorSha256's description to document that it stays UserData-only/frozen.
+    $H2_P2_h2_bundle_parameters_find = '  DiscordMonitorSha256:
+    Type: String
+    AllowedPattern: ''^[0-9a-f]{64}$''
+    Description: SHA-256 for the direct public-HTTPS Discord monitor in FirewallBundleId
+
+  AuthParityBundleId:'
+    $H2_P2_h2_bundle_parameters_replace = @"
+  DiscordMonitorSha256:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}`$'
+    Description: >
+      SHA-256 for the direct public-HTTPS Discord monitor in FirewallBundleId.
+      Consumed ONLY by PatriotPotInstanceV2's UserData (first-boot
+      provisioning) -- never by PatriotPotDiscordMonitorAssociation, which
+      uses H2DiscordMonitorSha256/H2BundleId instead. This pairing must
+      never change independent of a deliberate first-boot-path update,
+      because UserData is a replacement-triggering property on
+      AWS::EC2::Instance.
+
+  H2BundleId:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}`$'
+    Description: >
+      Content-addressed bundle supplying every H2 sidecar artifact
+      (discord-monitor.py, session_cluster.py, discord_rate_governor.py,
+      and the threat_intel package) to PatriotPotDiscordMonitorAssociation
+      ONLY. Deliberately distinct from FirewallBundleId/BootstrapBundleId:
+      neither this parameter nor H2DiscordMonitorSha256 is referenced
+      anywhere in PatriotPotInstanceV2's Properties (UserData included), so
+      publishing a new H2Bundle and updating this value never triggers EC2
+      instance replacement. The original patriotpot-egress-firewall.sh/
+      .service/discord-monitor.py grants under FirewallBundleId are left
+      untouched for the same reason UserData itself is untouched -- a future
+      fresh instance's first boot still needs them.
+
+  H2DiscordMonitorSha256:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}`$'
+    Description: >
+      SHA-256 for discord-monitor.py in H2BundleId. Independent of
+      DiscordMonitorSha256 (the UserData-embedded, FirewallBundleId-scoped
+      first-boot pairing, which stays frozen): this is the value
+      PatriotPotDiscordMonitorAssociation actually verifies against on
+      every post-boot run, so it is what tracks the current H2 code.
+
+  AuthParityBundleId:
+"@
+    $text = Set-AnchoredInsertion $text $H2_P2_h2_bundle_parameters_find $H2_P2_h2_bundle_parameters_replace "H2-P2-h2-bundle-parameters"
+
     # H2-I1a-bootstrap-read-arn-rationale: Carry the reviewed rationale for enumerating per-object ARNs instead of a prefix wildcard.
     $H2_I1a_bootstrap_read_arn_rationale_anchor = '                  - ''s3:GetObject''
                 Resource:
@@ -903,29 +1006,38 @@ function Add-H2TemplatePatch([string]$BaseTemplateText) {
                 # privilege expansion, not merely a maintenance convenience.
                 # This list must be kept in sync with the association's
                 # fetch_h2_support_file calls below.
+                #
+                # The FirewallBundleId-scoped discord-monitor.py entry below
+                # is UNCHANGED and left in place deliberately: it is what
+                # PatriotPotInstanceV2's UserData reads at first boot, and
+                # UserData is a replacement-triggering property -- neither
+                # this grant nor DiscordMonitorSha256's value may ever move.
+                # PatriotPotDiscordMonitorAssociation's OWN post-boot fetch
+                # uses the separate H2BundleId-scoped entry further below.
 "@ + "`n"
-    $text = Set-AnchoredInsertion $text $H2_I1a_bootstrap_read_arn_rationale_anchor ($H2_I1a_bootstrap_read_arn_rationale_insert + $H2_I1a_bootstrap_read_arn_rationale_anchor) "H2-I1a-bootstrap-read-arn-rationale"
+    $text = Set-AnchoredInsertion $text $H2_I1a_bootstrap_read_arn_rationale_anchor ($H2_I1a_bootstrap_read_arn_rationale_anchor + $H2_I1a_bootstrap_read_arn_rationale_insert) "H2-I1a-bootstrap-read-arn-rationale"
 
-    # H2-I1b-bootstrap-read-support-file-arns: Add the 14 H2 support-file object ARNs to PatriotPotBootstrapRead's explicit list.
-    $H2_I1b_bootstrap_read_support_file_arns_anchor = '                  - !Sub ''${EvidenceBucket.Arn}/bootstrap/${AuthParityBundleId}/userdb.txt''
+    # H2-I1b-bootstrap-read-h2bundle-arns: Add 15 H2Bundle-scoped explicit ARNs (discord-monitor.py + 14 sidecar files) to PatriotPotBootstrapRead. The FirewallBundleId-scoped discord-monitor.py/firewall entries are UNCHANGED -- this only ADDS the new H2BundleId-scoped grants.
+    $H2_I1b_bootstrap_read_h2bundle_arns_anchor = '                  - !Sub ''${EvidenceBucket.Arn}/bootstrap/${AuthParityBundleId}/userdb.txt''
 '
-    $H2_I1b_bootstrap_read_support_file_arns_insert = @"
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/session_cluster.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/discord_rate_governor.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel__init__.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_observables.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_parameter_store.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_cache.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_provider_result.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_http_client.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_greynoise.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_virustotal.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_shodan.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_broker.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_rate_governor.py'
-                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_worker.py'
+    $H2_I1b_bootstrap_read_h2bundle_arns_insert = @"
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/discord-monitor.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/session_cluster.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/discord_rate_governor.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel__init__.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel_observables.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel_parameter_store.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel_cache.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel_provider_result.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel_http_client.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel_greynoise.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel_virustotal.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel_shodan.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel_broker.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel_rate_governor.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${H2BundleId}/threat_intel_worker.py'
 "@ + "`n"
-    $text = Set-AnchoredInsertion $text $H2_I1b_bootstrap_read_support_file_arns_anchor ($H2_I1b_bootstrap_read_support_file_arns_anchor + $H2_I1b_bootstrap_read_support_file_arns_insert) "H2-I1b-bootstrap-read-support-file-arns"
+    $text = Set-AnchoredInsertion $text $H2_I1b_bootstrap_read_h2bundle_arns_anchor ($H2_I1b_bootstrap_read_h2bundle_arns_anchor + $H2_I1b_bootstrap_read_h2bundle_arns_insert) "H2-I1b-bootstrap-read-h2bundle-arns"
 
     # H2-I2-discord-credential-two-arns: PatriotPotDiscordCredential gains the intel webhook parameter ARN alongside the legacy one.
     $H2_I2_discord_credential_two_arns_find = '                Resource: !Sub ''arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${DiscordWebhookParameterName}''
@@ -961,7 +1073,35 @@ function Add-H2TemplatePatch([string]$BaseTemplateText) {
 "@ + "`n"
     $text = Set-AnchoredInsertion $text $H2_I3_threat_intel_credential_policy_anchor ($H2_I3_threat_intel_credential_policy_insert + $H2_I3_threat_intel_credential_policy_anchor) "H2-I3-threat-intel-credential-policy"
 
-    # H2-A1-discord-monitor-association: Discord-monitor association: fetch the H2 support files by pinned hash and teach the running instance the intel-channel parameter name. Merged into one entry because both edits target the same anchor.
+    # H2-A0-repoint-discord-monitor-fetch-to-h2bundle: Repoint PatriotPotDiscordMonitorAssociation's OWN discord-monitor.py fetch from FirewallBundleId/DiscordMonitorSha256 to H2BundleId/H2DiscordMonitorSha256. Safe: this resource is an AWS::SSM::Association, not an EC2 instance property -- no replacement semantics apply. UserData's separate, untouched read permissions are unaffected (it never fetched discord-monitor.py itself; only the association did).
+    $H2_A0_repoint_discord_monitor_fetch_to_h2bundle_find = '              AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
+                --bucket ''${EvidenceBucket}'' \
+                --key ''bootstrap/${FirewallBundleId}/discord-monitor.py'' \
+                /opt/patriotpot-discord/discord-monitor.py.new \
+                --output json \
+                --profile patriotpot \
+                --region us-east-1
+              printf ''%s  %s\n'' \
+                ''${DiscordMonitorSha256}'' \
+                /opt/patriotpot-discord/discord-monitor.py.new |
+                sha256sum --check --status
+'
+    $H2_A0_repoint_discord_monitor_fetch_to_h2bundle_replace = @"
+              AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
+                --bucket '`${EvidenceBucket}' \
+                --key 'bootstrap/`${H2BundleId}/discord-monitor.py' \
+                /opt/patriotpot-discord/discord-monitor.py.new \
+                --output json \
+                --profile patriotpot \
+                --region us-east-1
+              printf '%s  %s\n' \
+                '`${H2DiscordMonitorSha256}' \
+                /opt/patriotpot-discord/discord-monitor.py.new |
+                sha256sum --check --status
+"@ + "`n"
+    $text = Set-AnchoredInsertion $text $H2_A0_repoint_discord_monitor_fetch_to_h2bundle_find $H2_A0_repoint_discord_monitor_fetch_to_h2bundle_replace "H2-A0-repoint-discord-monitor-fetch-to-h2bundle"
+
+    # H2-A1-discord-monitor-association: Discord-monitor association: fetch the H2 support files (H2BundleId-scoped) by pinned hash and teach the running instance the intel-channel parameter name.
     $H2_A1_discord_monitor_association_anchor = '              systemctl try-restart patriotpot-discord.service
               systemctl is-active --quiet patriotpot-discord.service'
     $H2_A1_discord_monitor_association_insert = @"
@@ -973,7 +1113,7 @@ function Add-H2TemplatePatch([string]$BaseTemplateText) {
                 local destination="`$3"
                 AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
                   --bucket '`${EvidenceBucket}' \
-                  --key "bootstrap/`${FirewallBundleId}/`$asset_name" \
+                  --key "bootstrap/`${H2BundleId}/`$asset_name" \
                   "/opt/patriotpot-discord/`$asset_name.new" \
                   --output json \
                   --profile patriotpot \
@@ -1457,7 +1597,7 @@ function Assert-H2TemplateSnapshotParametersAreAccountedFor([string]$TemplateSna
     # future gate's own additions) leaking into the H2 snapshot before it is
     # ever used to create a change set.
     $templateParamNames = Get-TemplateParameterNames $TemplateSnapshotPath
-    $allowedNew = @("DiscordIntelWebhookParameterName")
+    $allowedNew = @("DiscordIntelWebhookParameterName", "H2BundleId", "H2DiscordMonitorSha256")
     $unaccountedNew = @(
         $templateParamNames | Where-Object {
             $DeployedParameterNames -notcontains $_ -and $allowedNew -notcontains $_
@@ -1465,6 +1605,20 @@ function Assert-H2TemplateSnapshotParametersAreAccountedFor([string]$TemplateSna
     )
     if ($unaccountedNew.Count -gt 0) {
         throw "H2 change set blocked: the candidate template snapshot declares parameter(s) not present on the deployed stack and outside H2's frozen scope ($($unaccountedNew -join ', ')). It must not be published or used to create a change set."
+    }
+}
+
+function Assert-H2BundleIdNotInInstanceSubtree([string]$CandidateTemplateText) {
+    # The safety property the H2BundleId/H2DiscordMonitorSha256 design
+    # exists to guarantee, checked directly and structurally -- not merely
+    # inferred from "UserData is byte-identical" elsewhere. Fails closed
+    # (throws) rather than silently passing if PatriotPotInstanceV2 cannot
+    # even be located, since that would make the check meaningless.
+    $instanceSubtree = Get-ResourceSubtreeText $CandidateTemplateText "PatriotPotInstanceV2"
+    foreach ($forbidden in @("H2BundleId", "H2DiscordMonitorSha256")) {
+        if ($instanceSubtree -match [regex]::Escape($forbidden)) {
+            throw "H2 candidate template blocked: '$forbidden' appears inside PatriotPotInstanceV2's resource subtree (UserData included). This parameter must never be consumed by an EC2 instance property -- doing so would make publishing a new H2 bundle trigger instance replacement, destroying the running honeypot and its on-disk Cowrie corpus. Fail closed."
+        }
     }
 }
 
@@ -1777,9 +1931,14 @@ if ($H2) {
     Assert-H2TemplateSnapshotParametersAreAccountedFor $h2Snapshot.Path $deployedParamNames
     Write-Host "Snapshot parameter scope verified: no undeployed non-H2 parameters present."
 
-    Section "PUBLISH CONTENT-ADDRESSED H2 SUPPORT BUNDLE"
-    $bundle = Publish-BootstrapBundle $EvidenceBucket
-    Write-Host "Bundle: $($bundle.BundleId)"
+    $h2SnapshotText = Get-Content -LiteralPath $h2Snapshot.Path -Raw
+    Assert-H2BundleIdNotInInstanceSubtree $h2SnapshotText
+    Write-Host "H2BundleId/H2DiscordMonitorSha256 confirmed absent from PatriotPotInstanceV2 (UserData included)."
+
+    Section "PUBLISH CONTENT-ADDRESSED H2 SIDECAR BUNDLE (H2BundleId, never referenced by UserData)"
+    $bundle = Publish-H2Bundle $EvidenceBucket
+    Write-Host "H2BundleId: $($bundle.BundleId)"
+    Write-Host "H2 discord-monitor.py SHA-256: $($bundle.DiscordMonitorSha256)"
     Write-Host "Assets: $($bundle.AssetCount)"
 
     Section "CREATE AND REVIEW H2 CLOUDFORMATION CHANGE SET"
