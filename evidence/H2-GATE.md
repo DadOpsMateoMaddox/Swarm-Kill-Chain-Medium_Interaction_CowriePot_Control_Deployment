@@ -11,11 +11,14 @@ H2_EXECUTED
 H2_DEPLOYED_STATE_VERIFIED
 H2_CREDENTIALS_PROVISIONED
 H2_LIVE_ENRICHMENT_VERIFIED
+H2_CREDENTIAL_EXPOSURE_INCIDENT_CLOSED
 ```
 
 Credential provisioning (§8) closed out the one open item from the prior
 status. A handling incident occurred during that step (§8b) — recorded
-here in full rather than omitted, with the remediation already underway.
+here in full rather than omitted. The exposed key was rotated by the
+operator the same day and independently re-validated as working; the
+incident is closed. Nothing outstanding on this gate.
 
 **Executed 2026-09-20.** `h2-final-20260920T212342Z` ran exactly as
 reviewed, with no regeneration and no incidental source changes
@@ -365,9 +368,16 @@ Immediate response:
   ever contained the value — the exposure is confined to the interactive
   session transcript.
 
-**This must be treated as still open until the operator confirms the
-GreyNoise key has been rotated.** Recorded here so the gap is visible in
-the permanent record, not just in chat.
+**Closed 2026-09-20.** Operator rotated the key (PowerShell
+`Write-SSMParameter ... -Overwrite $true`). Confirmed via
+`ssm:DescribeParameters` (value never read): version bumped `1 → 2`,
+`LastModifiedDate` 2026-09-20 18:40:10-04:00. New key's validity
+independently confirmed on the real deployed code (status/HTTP-code only,
+value never printed): `broker.enrich_ip("1.1.1.1")` →
+`{status: not_found, http_status: 404}` — a real authenticated GreyNoise
+response (an invalid/revoked key would return 401/403 `unauthorized`, not
+404), against an IP not used in any prior validation, ruling out a stale
+cache hit.
 
 Fix applied to prevent recurrence: every subsequent on-host check was
 redesigned to capture and print only success/failure, HTTP status, value
@@ -418,6 +428,6 @@ configured intel channel. The legacy channel's own independence (§7d)
 still holds; this run only exercised the intel path.
 
 **H2 is now fully live: enrichment against real provider data, delivered
-through the real intel channel, on the real deployed code.** Outstanding:
-operator confirmation that the exposed GreyNoise key (§8b) has been
-rotated.
+through the real intel channel, on the real deployed code.** The §8b
+exposure incident is closed (key rotated and independently re-validated).
+Nothing outstanding on this gate.
