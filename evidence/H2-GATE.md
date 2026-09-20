@@ -9,8 +9,13 @@ H2_CHANGESET_STRUCTURALLY_VERIFIED
 H2_ARTIFACT_PROVENANCE_VERIFIED
 H2_EXECUTED
 H2_DEPLOYED_STATE_VERIFIED
-H2_CREDENTIAL_PROVISIONING_PENDING  (operational, not a code/deployment defect)
+H2_CREDENTIALS_PROVISIONED
+H2_LIVE_ENRICHMENT_VERIFIED
 ```
+
+Credential provisioning (§8) closed out the one open item from the prior
+status. A handling incident occurred during that step (§8b) — recorded
+here in full rather than omitted, with the remediation already underway.
 
 **Executed 2026-09-20.** `h2-final-20260920T212342Z` ran exactly as
 reviewed, with no regeneration and no incidental source changes
@@ -325,3 +330,94 @@ What this proved, on the real deployed bytes:
 Follow-up (not part of this gate, tracked separately): provision the
 intel-webhook and three provider-key SSM parameters, then re-run this same
 controlled-fixture validation to confirm live enriched delivery end to end.
+
+## 8. Credential provisioning and live enrichment (2026-09-20, same day)
+
+### 8a. Provisioning
+
+The operator created all four SSM `SecureString` parameters directly
+(PowerShell `Write-SSMParameter`, run in their own terminal — the values
+never passed through this session). Confirmed via `ssm:DescribeParameters`
+(name/type/version only, value never read):
+
+| Parameter | Type | Version |
+|---|---|---|
+| `/patriotpot/2026-control/greynoise-api-key` | SecureString | 1 |
+| `/patriotpot/2026-control/virustotal-api-key` | SecureString | 1 |
+| `/patriotpot/2026-control/shodan-api-key` | SecureString | 1 |
+| `/patriotpot/2026-control/discord-intel-webhook` | SecureString | 1 |
+
+### 8b. Incident: one GreyNoise key value exposed in the review transcript
+
+While debugging why an initial revalidation attempt reported
+`missing_credential` for all four (root cause: §8c — nothing to do with
+the parameters themselves), a diagnostic command's raw stdout — the
+decrypted parameter value — was captured and printed into this session's
+output. This is a real handling failure against the standing rule "never
+print, log, or persist provider API keys," not a near-miss.
+
+Immediate response:
+- The local scratchpad file that captured it was overwritten/redacted the
+  same turn.
+- The operator was told directly, in the same turn, to rotate/revoke that
+  GreyNoise key and replace the SSM parameter value with the new one.
+- No commit, no file in this repository, and no other durable artifact
+  ever contained the value — the exposure is confined to the interactive
+  session transcript.
+
+**This must be treated as still open until the operator confirms the
+GreyNoise key has been rotated.** Recorded here so the gap is visible in
+the permanent record, not just in chat.
+
+Fix applied to prevent recurrence: every subsequent on-host check was
+redesigned to capture and print only success/failure, HTTP status, value
+byte-length, and boolean shape checks (e.g. "looks like a URL") — never
+the value itself, and never `normalized` provider-response content
+verbatim either, as defense in depth.
+
+### 8c. Root cause of the initial `missing_credential` result (unrelated to 8b)
+
+Not a problem with the newly-provisioned parameters or IAM. `AWS_PROFILE`
+resolution for the `patriotpot` CLI profile depends on
+`AWS_CONFIG_FILE=/etc/aws/config` (where `[profile patriotpot]` actually
+lives — confirmed by reading that file directly), which
+`patriotpot-discord.service` receives via its own
+`EnvironmentFile=/etc/patriotpot/discord.env` and every subprocess call
+inside `CredentialCache`/`SsmSecureStringCache` inherits from the calling
+process's environment. The first validation script ran via SSM
+RunCommand's own shell, which does not source that file, so `aws ssm
+get-parameter --profile patriotpot` failed identically for every
+parameter, old or new — confirmed by reproducing the same failure against
+the pre-existing, known-working legacy webhook parameter under the same
+un-sourced environment. Sourcing `/etc/patriotpot/discord.env` before
+invoking the validation script resolved it. The real running service
+process was never affected by this — it has always had this environment
+variable.
+
+### 8d. Live enrichment validation — confirmed working
+
+Same controlled, clearly-marked fixture
+(`session:H2-DEPLOYED-VALIDATION-20260920-3`, src_ip `8.8.8.8`), same
+deployed code path, this time with `/etc/patriotpot/discord.env` sourced
+so the real credential-resolution path is exercised faithfully:
+
+| Provider | Status | HTTP | Has normalized data |
+|---|---|---|---|
+| GreyNoise | `not_found` | 404 | no |
+| VirusTotal | `ok` | 200 | yes |
+| Shodan | `ok` | 200 | yes |
+
+`not_found` for GreyNoise against `8.8.8.8` is the expected real-world
+result — GreyNoise has no scanner/noise record for Google DNS — not a
+failure. VirusTotal and Shodan both returned real, live data.
+
+Delivery: `CredentialCache` correctly resolved the intel webhook
+(`credential_available`), `post_payload` returned `success=True,
+status_code=204` — the validation card was delivered to the real,
+configured intel channel. The legacy channel's own independence (§7d)
+still holds; this run only exercised the intel path.
+
+**H2 is now fully live: enrichment against real provider data, delivered
+through the real intel channel, on the real deployed code.** Outstanding:
+operator confirmation that the exposed GreyNoise key (§8b) has been
+rotated.
