@@ -11,10 +11,12 @@ param(
     [string]$Environment = "production",
     [string]$ProjectRoot = "C:\DadOpsMateoMaddox\PatriotPot\2026-control",
     [string]$DiscordWebhookParameterName = "/patriotpot/2026-control/discord-webhook",
+    [string]$DiscordIntelWebhookParameterName = "/patriotpot/2026-control/discord-intel-webhook",
     [switch]$PreflightOnly,
     [switch]$FirewallOnly,
     [switch]$H2,
     [switch]$AuthParity,
+    [switch]$IncludeAuthParityInstrumentationFix,
     [switch]$ExecuteChangeSet
 )
 
@@ -508,29 +510,52 @@ function Test-EvidenceBucketPolicyChangeIsDependencyOnly([object]$ResourceChange
     return $true
 }
 
-function New-H2ChangeSet([object]$Bundle) {
+function New-H2ChangeSet(
+    [object]$Bundle,
+    [object]$TemplateSnapshot,
+    [switch]$IncludeAuthParityInstrumentationFix,
+    [string]$DeployedAuthParityAssociationSubtreeText = $null,
+    [string]$CandidateAuthParityAssociationSubtreeText = $null,
+    [string]$ExpectedInstrumentationFixAssociationSubtreeText = $null
+) {
+    # H2 candidate = LIVE DEPLOYED TEMPLATE + verified
+    # gates/h2/h2-template-patch.json, per New-H2TemplateSnapshot. This
+    # function only creates/reviews/guards the real change set, always
+    # against $TemplateSnapshot.Path -- never the working tree's $Template,
+    # which is exactly the H2/AuthParity-instrumentation hitchhiking risk
+    # this whole gate exists to rule out.
     $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
-    $name = "h2-threat-intel-$timestamp"
-    $parameters = @(
-        "ParameterKey=HostAmiId,UsePreviousValue=true",
-        "ParameterKey=BootstrapBundleId,UsePreviousValue=true",
-        "ParameterKey=BootstrapScriptSha256,UsePreviousValue=true",
-        "ParameterKey=FirewallBundleId,ParameterValue=$($Bundle.BundleId)",
-        "ParameterKey=FirewallScriptSha256,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'patriotpot-egress-firewall.sh'))",
-        "ParameterKey=FirewallUnitSha256,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'patriotpot-egress-firewall.service'))",
-        "ParameterKey=DiscordMonitorSha256,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'discord-monitor.py'))",
-        "ParameterKey=CowrieHostKeySecret,UsePreviousValue=true",
-        "ParameterKey=CowrieHostKeyVersionId,UsePreviousValue=true",
-        "ParameterKey=DiscordWebhookParameterName,UsePreviousValue=true",
-        "ParameterKey=InstanceType,UsePreviousValue=true",
-        "ParameterKey=Environment,UsePreviousValue=true"
-    )
+    $name = "h2-$timestamp"
+
+    $templateParamNames = Get-TemplateParameterNames $TemplateSnapshot.Path
+    $allowedNew = @("DiscordIntelWebhookParameterName")
+    $parameters = @()
+    foreach ($paramName in $templateParamNames) {
+        if ($allowedNew -contains $paramName) {
+            continue
+        }
+        if ($paramName -eq "FirewallBundleId" -or $paramName -eq "BootstrapBundleId") {
+            $parameters += "ParameterKey=$paramName,ParameterValue=$($Bundle.BundleId)"
+        } elseif ($paramName -eq "BootstrapScriptSha256") {
+            $parameters += "ParameterKey=$paramName,ParameterValue=$($Bundle.BootstrapSha256)"
+        } elseif ($paramName -eq "FirewallScriptSha256") {
+            $parameters += "ParameterKey=$paramName,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'patriotpot-egress-firewall.sh'))"
+        } elseif ($paramName -eq "FirewallUnitSha256") {
+            $parameters += "ParameterKey=$paramName,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'patriotpot-egress-firewall.service'))"
+        } elseif ($paramName -eq "DiscordMonitorSha256") {
+            $parameters += "ParameterKey=$paramName,ParameterValue=$(Get-Sha256 (Join-Path $NativeRoot 'discord-monitor.py'))"
+        } else {
+            $parameters += "ParameterKey=$paramName,UsePreviousValue=true"
+        }
+    }
+    $parameters += "ParameterKey=DiscordIntelWebhookParameterName,ParameterValue=$DiscordIntelWebhookParameterName"
+
     $response = Invoke-Aws cloudformation create-change-set `
         --stack-name $StackName `
         --change-set-name $name `
         --change-set-type UPDATE `
-        --description "H2 threat-intelligence enrichment and session clustering" `
-        --template-body "file://$Template" `
+        --description "H2 threat-intelligence enrichment and Discord webhook separation" `
+        --template-body "file://$($TemplateSnapshot.Path)" `
         --parameters $parameters `
         --capabilities CAPABILITY_NAMED_IAM `
         --include-nested-stacks `
@@ -545,59 +570,21 @@ function New-H2ChangeSet([object]$Bundle) {
         --include-property-values `
         --output json | ConvertFrom-Json
     # H1 finding: --include-property-values can silently omit a Dynamic-only
-    # change (e.g. EvidenceBucketPolicy). The allowlist below is evaluated
-    # against the plain (no property-values) listing, which is authoritative
+    # change (e.g. EvidenceBucketPolicy). The plain listing is authoritative
     # for "which resources changed at all".
     $plainReview = Invoke-Aws cloudformation describe-change-set `
         --stack-name $StackName `
         --change-set-name $response.Id `
         --output json | ConvertFrom-Json
 
-    $replacements = @(
-        $plainReview.Changes |
-            Where-Object {
-                $_.ResourceChange.PSObject.Properties.Name -contains "Replacement" -and
-                $_.ResourceChange.Replacement -in @("True", "Conditional")
-            }
-    )
-    if ($replacements.Count -gt 0) {
-        throw "H2 change set contains a forbidden replacement: $($replacements.ResourceChange.LogicalResourceId -join ', ')"
-    }
+    Assert-H2CandidateScope `
+        -PlainReview $plainReview `
+        -IncludeAuthParityInstrumentationFix:$IncludeAuthParityInstrumentationFix `
+        -DeployedAuthParityAssociationSubtreeText $DeployedAuthParityAssociationSubtreeText `
+        -CandidateAuthParityAssociationSubtreeText $CandidateAuthParityAssociationSubtreeText `
+        -ExpectedInstrumentationFixAssociationSubtreeText $ExpectedInstrumentationFixAssociationSubtreeText
 
-    $requiredResources = @("PatriotPotDiscordMonitorAssociation", "PatriotPotInstanceRole")
-    $conditionallyAllowed = @("EvidenceBucketPolicy", "PatriotPotEgressFirewallAssociation")
-    $actualResources = @($plainReview.Changes.ResourceChange.LogicalResourceId)
-
-    foreach ($required in $requiredResources) {
-        if ($actualResources -notcontains $required) {
-            throw "H2 change set lacks required resource update: $required"
-        }
-    }
-
-    $unexpected = @($actualResources | Where-Object { ($requiredResources + $conditionallyAllowed) -notcontains $_ })
-    if ($unexpected.Count -gt 0) {
-        throw "H2 change set contains resource(s) outside the allowlist: $($unexpected -join ', ')"
-    }
-
-    # explicit hard-fail even if somehow present under a different guise
-    foreach ($protected in @(
-        "PatriotPotInstanceV2", "PatriotPotEIP", "PatriotPotSecurityGroup",
-        "VPC", "PublicSubnet", "PublicRouteTable", "PublicRoute",
-        "SubnetRouteTableAssociation", "InternetGateway", "AttachGateway"
-    )) {
-        if ($actualResources -contains $protected) {
-            throw "H2 change set unexpectedly touches protected resource: $protected"
-        }
-    }
-
-    if ($actualResources -contains "EvidenceBucketPolicy") {
-        $bucketPolicyChange = ($plainReview.Changes | Where-Object { $_.ResourceChange.LogicalResourceId -eq "EvidenceBucketPolicy" }).ResourceChange
-        if (-not (Test-EvidenceBucketPolicyChangeIsDependencyOnly $bucketPolicyChange)) {
-            throw "H2 change set modifies EvidenceBucketPolicy with a non-dependency-only change; this requires separate review."
-        }
-    }
-
-    if ($actualResources -contains "PatriotPotEgressFirewallAssociation") {
+    if (@($plainReview.Changes.ResourceChange.LogicalResourceId) -contains "PatriotPotEgressFirewallAssociation") {
         $firewallAssocChange = ($plainReview.Changes | Where-Object { $_.ResourceChange.LogicalResourceId -eq "PatriotPotEgressFirewallAssociation" }).ResourceChange
         if (-not (Test-ChangeIsHashSubstitutionOnly $firewallAssocChange)) {
             throw "H2 change set modifies PatriotPotEgressFirewallAssociation beyond a bundle-path hash substitution; this requires separate review."
@@ -640,6 +627,64 @@ function Get-DeployedTemplateText {
         --stack-name $StackName `
         --output json | ConvertFrom-Json
     return $response.TemplateBody
+}
+
+function Get-DeployedTemplateSnapshot {
+    # Common entry point for every gate that needs to know what is actually
+    # deployed: stack identity/status, the live template's own bytes and
+    # hash, current parameters, outputs, and the instance's physical
+    # resource identity. Every later gate (H2 included) builds its candidate
+    # from THESE bytes, never from Git HEAD or this working tree -- per the
+    # project-wide invariant established during the auth-parity live
+    # baseline verification: deployed state is established from the live
+    # CloudFormation template and live resource state, never inferred from
+    # Git or the working tree.
+    #
+    # Fails closed, always -- there is no fallback path. A caller that
+    # cannot reach AWS must not substitute a cached snapshot, a prior
+    # scratchpad copy, or the working tree; those are all stale sources of
+    # the same kind this function exists to rule out.
+    $stackResponse = Invoke-Aws cloudformation describe-stacks `
+        --stack-name $StackName `
+        --output json | ConvertFrom-Json
+    $stack = $stackResponse.Stacks[0]
+
+    $terminalStatuses = @("CREATE_COMPLETE", "UPDATE_COMPLETE", "UPDATE_ROLLBACK_COMPLETE")
+    if ($terminalStatuses -notcontains $stack.StackStatus) {
+        throw "Stack is not in a terminal status (found: $($stack.StackStatus)); deployed template state is ambiguous mid-update. Fail closed rather than snapshot an in-flight stack."
+    }
+
+    $templateResponse = Invoke-Aws cloudformation get-template `
+        --stack-name $StackName `
+        --output json | ConvertFrom-Json
+    $templateBody = $templateResponse.TemplateBody
+    if ($templateBody -isnot [string]) {
+        throw "Live template body was not returned as a string (JSON-format stack template?). This gate requires the YAML text form; fail closed rather than silently coerce."
+    }
+    $normalizedText = $templateBody -replace "`r`n", "`n"
+    $templateBytes = [System.Text.Encoding]::UTF8.GetBytes($normalizedText)
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    $templateHash = [System.BitConverter]::ToString($sha256.ComputeHash($templateBytes)).Replace("-", "").ToLowerInvariant()
+
+    $instanceDetail = Invoke-Aws cloudformation describe-stack-resource `
+        --stack-name $StackName `
+        --logical-resource-id PatriotPotInstanceV2 `
+        --output json | ConvertFrom-Json
+    $instanceId = $instanceDetail.StackResourceDetail.PhysicalResourceId
+    if ([string]::IsNullOrWhiteSpace($instanceId)) {
+        throw "Live instance physical resource ID was not found. Fail closed."
+    }
+
+    return [pscustomobject]@{
+        StackId          = $stack.StackId
+        StackStatus      = $stack.StackStatus
+        RetrievedUtc     = (Get-Date).ToUniversalTime().ToString("o")
+        TemplateText     = $normalizedText
+        TemplateSha256   = $templateHash
+        Parameters       = $stack.Parameters
+        Outputs          = $stack.Outputs
+        InstancePhysicalId = $instanceId
+    }
 }
 
 function Add-AuthParityTemplatePatch([string]$BaseTemplateText) {
@@ -810,6 +855,197 @@ function Add-AuthParityTemplatePatch([string]$BaseTemplateText) {
     return $text
 }
 
+function Add-H2TemplatePatch([string]$BaseTemplateText) {
+    # Replays exactly the reviewed H2 template diff (gates/h2/h2-template-patch.json,
+    # verified by residue-diff against the working tree) onto a clean live-deployed
+    # base -- never onto this working tree's file directly, and UserData is
+    # deliberately excluded (gates/h2/h2-template-patch.json excluded_entries:
+    # H2-U1-userdata-intel-parameter -- UserData is a replacement-triggering
+    # property on AWS::EC2::Instance; the running instance already receives
+    # DISCORD_INTEL_PARAMETER_NAME via the discord.env patch in H2-A1).
+    # Each anchor must occur exactly once in the base text.
+    $text = $BaseTemplateText -replace "`r`n", "`n"
+
+    # H2-P1-intel-webhook-parameter: Add DiscordIntelWebhookParameterName and mark the legacy webhook as the raw stream.
+    $H2_P1_intel_webhook_parameter_find = '      Existing SSM SecureString parameter read locally by the Discord monitor.
+      The value is never passed through CloudFormation or written to source.
+
+  InstanceType:'
+    $H2_P1_intel_webhook_parameter_replace = @"
+      Existing SSM SecureString parameter read locally by the Discord monitor.
+      The value is never passed through CloudFormation or written to source.
+      Carries the legacy/raw per-event notification stream only.
+
+  DiscordIntelWebhookParameterName:
+    Type: String
+    Default: /patriotpot/2026-control/discord-intel-webhook
+    AllowedPattern: '^/[A-Za-z0-9_.:/-]+`$'
+    Description: >
+      Existing SSM SecureString parameter read locally by the Discord monitor
+      for the H2 clustered/enriched intelligence summary stream. Independent
+      of DiscordWebhookParameterName: its own credential, queue, and rate
+      governor, so an outage on one channel never stalls the other. The value
+      is never passed through CloudFormation or written to source.
+
+  InstanceType:
+"@
+    $text = Set-AnchoredInsertion $text $H2_P1_intel_webhook_parameter_find $H2_P1_intel_webhook_parameter_replace "H2-P1-intel-webhook-parameter"
+
+    # H2-I1a-bootstrap-read-arn-rationale: Carry the reviewed rationale for enumerating per-object ARNs instead of a prefix wildcard.
+    $H2_I1a_bootstrap_read_arn_rationale_anchor = '                  - ''s3:GetObject''
+                Resource:
+'
+    $H2_I1a_bootstrap_read_arn_rationale_insert = @"
+                # Explicit per-object ARNs, not a prefix wildcard: a wildcard
+                # here would grant read access to any future object placed
+                # under this bundle prefix, not just the ones the running
+                # association actually fetches today -- a real (if narrow)
+                # privilege expansion, not merely a maintenance convenience.
+                # This list must be kept in sync with the association's
+                # fetch_h2_support_file calls below.
+"@ + "`n"
+    $text = Set-AnchoredInsertion $text $H2_I1a_bootstrap_read_arn_rationale_anchor ($H2_I1a_bootstrap_read_arn_rationale_insert + $H2_I1a_bootstrap_read_arn_rationale_anchor) "H2-I1a-bootstrap-read-arn-rationale"
+
+    # H2-I1b-bootstrap-read-support-file-arns: Add the 14 H2 support-file object ARNs to PatriotPotBootstrapRead's explicit list.
+    $H2_I1b_bootstrap_read_support_file_arns_anchor = '                  - !Sub ''${EvidenceBucket.Arn}/bootstrap/${AuthParityBundleId}/userdb.txt''
+'
+    $H2_I1b_bootstrap_read_support_file_arns_insert = @"
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/session_cluster.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/discord_rate_governor.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel__init__.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_observables.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_parameter_store.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_cache.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_provider_result.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_http_client.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_greynoise.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_virustotal.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_shodan.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_broker.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_rate_governor.py'
+                  - !Sub '`${EvidenceBucket.Arn}/bootstrap/`${FirewallBundleId}/threat_intel_worker.py'
+"@ + "`n"
+    $text = Set-AnchoredInsertion $text $H2_I1b_bootstrap_read_support_file_arns_anchor ($H2_I1b_bootstrap_read_support_file_arns_anchor + $H2_I1b_bootstrap_read_support_file_arns_insert) "H2-I1b-bootstrap-read-support-file-arns"
+
+    # H2-I2-discord-credential-two-arns: PatriotPotDiscordCredential gains the intel webhook parameter ARN alongside the legacy one.
+    $H2_I2_discord_credential_two_arns_find = '                Resource: !Sub ''arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${DiscordWebhookParameterName}''
+'
+    $H2_I2_discord_credential_two_arns_replace = @"
+                # Two explicit, independent parameter ARNs: legacy raw
+                # webhook and H2 intel webhook. Never a prefix wildcard.
+                Resource:
+                  - !Sub 'arn:aws:ssm:`${AWS::Region}:`${AWS::AccountId}:parameter`${DiscordWebhookParameterName}'
+                  - !Sub 'arn:aws:ssm:`${AWS::Region}:`${AWS::AccountId}:parameter`${DiscordIntelWebhookParameterName}'
+"@ + "`n"
+    $text = Set-AnchoredInsertion $text $H2_I2_discord_credential_two_arns_find $H2_I2_discord_credential_two_arns_replace "H2-I2-discord-credential-two-arns"
+
+    # H2-I3-threat-intel-credential-policy: Add the PatriotPotThreatIntelCredential inline policy (explicit provider-key parameter ARNs).
+    $H2_I3_threat_intel_credential_policy_anchor = '
+  PatriotPotInstanceProfile:'
+    $H2_I3_threat_intel_credential_policy_insert = @"
+
+        - PolicyName: PatriotPotThreatIntelCredential
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                # H2: exactly the three threat-intel provider keys, no
+                # wildcard. Each is a fixed path, not a stack parameter, per
+                # the H2 requirement that this scope stay narrow and exact.
+                Resource:
+                  - !Sub 'arn:aws:ssm:`${AWS::Region}:`${AWS::AccountId}:parameter/patriotpot/2026-control/greynoise-api-key'
+                  - !Sub 'arn:aws:ssm:`${AWS::Region}:`${AWS::AccountId}:parameter/patriotpot/2026-control/virustotal-api-key'
+                  - !Sub 'arn:aws:ssm:`${AWS::Region}:`${AWS::AccountId}:parameter/patriotpot/2026-control/shodan-api-key'
+"@ + "`n"
+    $text = Set-AnchoredInsertion $text $H2_I3_threat_intel_credential_policy_anchor ($H2_I3_threat_intel_credential_policy_insert + $H2_I3_threat_intel_credential_policy_anchor) "H2-I3-threat-intel-credential-policy"
+
+    # H2-A1-discord-monitor-association: Discord-monitor association: fetch the H2 support files by pinned hash and teach the running instance the intel-channel parameter name. Merged into one entry because both edits target the same anchor.
+    $H2_A1_discord_monitor_association_anchor = '              systemctl try-restart patriotpot-discord.service
+              systemctl is-active --quiet patriotpot-discord.service'
+    $H2_A1_discord_monitor_association_insert = @"
+              install -d -m 0755 -o root -g root /usr/local/libexec/threat_intel
+              install -d -m 0700 -o patriot-discord -g patriot-discord /var/lib/patriotpot-discord/threat-intel
+              fetch_h2_support_file() {
+                local asset_name="`$1"
+                local expected_sha256="`$2"
+                local destination="`$3"
+                AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
+                  --bucket '`${EvidenceBucket}' \
+                  --key "bootstrap/`${FirewallBundleId}/`$asset_name" \
+                  "/opt/patriotpot-discord/`$asset_name.new" \
+                  --output json \
+                  --profile patriotpot \
+                  --region us-east-1
+                printf '%s  %s\n' "`$expected_sha256" "/opt/patriotpot-discord/`$asset_name.new" |
+                  sha256sum --check --status
+                install -m 0644 -o root -g root "/opt/patriotpot-discord/`$asset_name.new" "`$destination"
+                rm -f "/opt/patriotpot-discord/`$asset_name.new"
+              }
+              fetch_h2_support_file session_cluster.py \
+                b0ae7a61f5ed3ca0055b7f3306be22127ef4a796b4e1562f06dff310b13e475c \
+                /usr/local/libexec/session_cluster.py
+              fetch_h2_support_file discord_rate_governor.py \
+                e273bb8f3e7876f58ae2d1bb10220bc1eaf5560ba0cf2f60ab34c82d77026f42 \
+                /usr/local/libexec/discord_rate_governor.py
+              fetch_h2_support_file threat_intel__init__.py \
+                d5986e22011704756d751f43dc9333a547271cee81052c347d411e9e5e1b880a \
+                /usr/local/libexec/threat_intel/__init__.py
+              fetch_h2_support_file threat_intel_observables.py \
+                3cf659977250161e413d6047a29a43b35b3919fbfa2e6f119e08aac89b047cff \
+                /usr/local/libexec/threat_intel/observables.py
+              fetch_h2_support_file threat_intel_parameter_store.py \
+                e0d4b34a76eab34db939b18f37b1d1d987aad757827089494b32f17e27bda9fe \
+                /usr/local/libexec/threat_intel/parameter_store.py
+              fetch_h2_support_file threat_intel_cache.py \
+                cd429e9d8c787084d52133f1e4b04925fb38f2458f8e1bc5b0f7fc386febf92a \
+                /usr/local/libexec/threat_intel/cache.py
+              fetch_h2_support_file threat_intel_provider_result.py \
+                2bf42c481b14ca2dddbcb3fbe11bea7861cc9ca68a64ef078065fafc82c9c0b4 \
+                /usr/local/libexec/threat_intel/provider_result.py
+              fetch_h2_support_file threat_intel_http_client.py \
+                4aca1fa502cd234d832b5cf012909cc8a886bf5f6aa29e1ff7ee1e79470d6e7e \
+                /usr/local/libexec/threat_intel/http_client.py
+              fetch_h2_support_file threat_intel_greynoise.py \
+                200ff0abfbfb7a7197a0187139ee8e634ab7e9f1fa92f38400c6278701a3eefd \
+                /usr/local/libexec/threat_intel/greynoise.py
+              fetch_h2_support_file threat_intel_virustotal.py \
+                2a2a5c43f27405f7ca2f7c6c4686de7872632c7737fd9ee02bac333833dd91d2 \
+                /usr/local/libexec/threat_intel/virustotal.py
+              fetch_h2_support_file threat_intel_shodan.py \
+                4cb7a9d25631240c3e600be7c235d38029b06fd1390fb97768aafdd232f1da1d \
+                /usr/local/libexec/threat_intel/shodan.py
+              fetch_h2_support_file threat_intel_broker.py \
+                7c4934aa7d28a2ae258254f39af5cdf67fcd8655dd57615b9f7c7f39985b34a4 \
+                /usr/local/libexec/threat_intel/broker.py
+              fetch_h2_support_file threat_intel_rate_governor.py \
+                0a4b1ce978506c263e9c1c164dad3c0a1dc0fe944021e208f795606da742539e \
+                /usr/local/libexec/threat_intel/rate_governor.py
+              fetch_h2_support_file threat_intel_worker.py \
+                68d5cf8d6d2cab24e25a83d6ccc987d38cbf61784fa8be75909eb31a0a65e6e1 \
+                /usr/local/libexec/threat_intel/worker.py
+              # Webhook separation: Control-0 was already bootstrapped before
+              # DISCORD_INTEL_PARAMETER_NAME existed, so this association is
+              # what teaches the running instance about the second,
+              # independent intel-channel credential. Idempotent: replaces
+              # any prior value of this one key, leaves every other line
+              # (including the legacy DISCORD_PARAMETER_NAME) untouched.
+              if [[ -f /etc/patriotpot/discord.env ]]; then
+                grep -v '^DISCORD_INTEL_PARAMETER_NAME=' /etc/patriotpot/discord.env \
+                  >/etc/patriotpot/discord.env.new || true
+                printf 'DISCORD_INTEL_PARAMETER_NAME=%s\n' \
+                  '`${DiscordIntelWebhookParameterName}' >>/etc/patriotpot/discord.env.new
+                chmod 0640 /etc/patriotpot/discord.env.new
+                chown root:patriot-discord /etc/patriotpot/discord.env.new
+                mv /etc/patriotpot/discord.env.new /etc/patriotpot/discord.env
+              fi
+"@ + "`n"
+    $text = Set-AnchoredInsertion $text $H2_A1_discord_monitor_association_anchor ($H2_A1_discord_monitor_association_insert + $H2_A1_discord_monitor_association_anchor) "H2-A1-discord-monitor-association"
+
+    return $text
+}
+
 function Set-AnchoredInsertion([string]$Text, [string]$Anchor, [string]$Replacement, [string]$Description) {
     $first = $Text.IndexOf($Anchor)
     $last = $Text.LastIndexOf($Anchor)
@@ -845,6 +1081,33 @@ function New-AuthParityTemplateSnapshot {
         Path           = $snapshotPath
         Sha256         = $hash
         BaseProvenance = $BaseProvenance
+    }
+}
+
+function New-H2TemplateSnapshot {
+    param(
+        [object]$DeployedSnapshot
+    )
+    # H2 candidate = LIVE DEPLOYED TEMPLATE (Get-DeployedTemplateSnapshot)
+    # + verified gates/h2/h2-template-patch.json -- NEVER the working-tree
+    # template. $DeployedSnapshot is required (no default fetch here) so
+    # every call site is forced to go through Get-DeployedTemplateSnapshot
+    # itself and inherit its fail-closed, no-Git-fallback behavior; a test
+    # double is passed the same way a real one would be.
+    if ($null -eq $DeployedSnapshot -or -not $DeployedSnapshot.TemplateText) {
+        throw "New-H2TemplateSnapshot requires a live-retrieved DeployedSnapshot (Get-DeployedTemplateSnapshot); it will not fetch or fall back on its own. Fail closed."
+    }
+    $patched = Add-H2TemplatePatch $DeployedSnapshot.TemplateText
+    $snapshotDir = Join-Path ([System.IO.Path]::GetTempPath()) "patriotpot-h2-snapshot"
+    New-Item -ItemType Directory -Force -Path $snapshotDir | Out-Null
+    $snapshotPath = Join-Path $snapshotDir "gmu-honeypot-stack-2026-control.h2-snapshot.yaml"
+    [System.IO.File]::WriteAllText($snapshotPath, $patched, [System.Text.UTF8Encoding]::new($false))
+    $hash = Get-Sha256 $snapshotPath
+    return [pscustomobject]@{
+        Path                 = $snapshotPath
+        Sha256               = $hash
+        BaseTemplateSha256   = $DeployedSnapshot.TemplateSha256
+        BaseProvenance       = "aws cloudformation get-template --stack-name $StackName (live deployed template, StackId=$($DeployedSnapshot.StackId))"
     }
 }
 
@@ -1188,6 +1451,141 @@ function Assert-TemplateSnapshotParametersAreAccountedFor([string]$TemplateSnaps
     }
 }
 
+function Assert-H2TemplateSnapshotParametersAreAccountedFor([string]$TemplateSnapshotPath, [string[]]$DeployedParameterNames) {
+    # Same discipline as Assert-TemplateSnapshotParametersAreAccountedFor,
+    # H2's own allowlist. Catches any undeployed non-H2 parameter (e.g. a
+    # future gate's own additions) leaking into the H2 snapshot before it is
+    # ever used to create a change set.
+    $templateParamNames = Get-TemplateParameterNames $TemplateSnapshotPath
+    $allowedNew = @("DiscordIntelWebhookParameterName")
+    $unaccountedNew = @(
+        $templateParamNames | Where-Object {
+            $DeployedParameterNames -notcontains $_ -and $allowedNew -notcontains $_
+        }
+    )
+    if ($unaccountedNew.Count -gt 0) {
+        throw "H2 change set blocked: the candidate template snapshot declares parameter(s) not present on the deployed stack and outside H2's frozen scope ($($unaccountedNew -join ', ')). It must not be published or used to create a change set."
+    }
+}
+
+function Assert-H2CandidateScope(
+    [object]$PlainReview,
+    [switch]$IncludeAuthParityInstrumentationFix,
+    [string]$DeployedAuthParityAssociationSubtreeText = $null,
+    [string]$CandidateAuthParityAssociationSubtreeText = $null,
+    [string]$ExpectedInstrumentationFixAssociationSubtreeText = $null
+) {
+    # Mechanically enforces the H2 gate scope. The hard stops below are
+    # absolute -- no proof data widens them:
+    #   - any Replacement=True/Conditional, on ANY resource     -> FAIL
+    #   - PatriotPotInstanceV2 appearing in the inventory at all -> FAIL
+    #     (this is the guard against H2-U1's UserData/replacement risk;
+    #     Add-H2TemplatePatch never touches UserData, so this resource
+    #     should never appear here at all -- its presence means the
+    #     candidate was NOT built via New-H2TemplateSnapshot)
+    #   - live-template retrieval failing is enforced upstream, by
+    #     Get-DeployedTemplateSnapshot itself having no fallback path
+    # PatriotPotAuthParityAssociation is the one resource whose presence is
+    # proof-gated rather than a blanket hard fail or blanket allowance: by
+    # default its presence is a hitchhiking violation and FAILs; passing
+    # -IncludeAuthParityInstrumentationFix permits it ONLY together with
+    # subtree-text proof that the change is exactly the reviewed f502213
+    # instrumentation fix and nothing else.
+    $changes = @($PlainReview.Changes)
+    $actualResources = @($changes.ResourceChange.LogicalResourceId)
+
+    $replacements = @(
+        $changes | Where-Object {
+            $_.ResourceChange.PSObject.Properties.Name -contains "Replacement" -and
+            $_.ResourceChange.Replacement -in @("True", "Conditional")
+        }
+    )
+    if ($replacements.Count -gt 0) {
+        throw "H2 change set contains a forbidden replacement: $($replacements.ResourceChange.LogicalResourceId -join ', ')"
+    }
+
+    if ($actualResources -contains "PatriotPotInstanceV2") {
+        throw "H2 change set touches PatriotPotInstanceV2. This gate never modifies UserData or any other instance property (H2-U1 is deliberately excluded -- see gates/h2/h2-template-patch.json excluded_entries); a candidate that touches this resource was not built via New-H2TemplateSnapshot / Add-H2TemplatePatch. Fail closed -- instance replacement would end the running experiment and destroy the on-disk Cowrie corpus."
+    }
+
+    $protected = @(
+        "PatriotPotEIP", "PatriotPotSecurityGroup",
+        "VPC", "PublicSubnet", "PublicRouteTable", "PublicRoute",
+        "SubnetRouteTableAssociation", "InternetGateway", "AttachGateway",
+        "EvidenceBucket", "PatriotPotEgressFirewallAssociation"
+    )
+    $touchedProtected = @($actualResources | Where-Object { $protected -contains $_ })
+    if ($touchedProtected.Count -gt 0) {
+        throw "H2 change set touches protected resource(s): $($touchedProtected -join ', ')"
+    }
+
+    $requiredResources = @("PatriotPotDiscordMonitorAssociation", "PatriotPotInstanceRole")
+    $baseAllowed = @($requiredResources + @("EvidenceBucketPolicy"))
+
+    if ($IncludeAuthParityInstrumentationFix) {
+        if (-not $DeployedAuthParityAssociationSubtreeText -or -not $CandidateAuthParityAssociationSubtreeText -or
+            -not $ExpectedInstrumentationFixAssociationSubtreeText) {
+            throw "-IncludeAuthParityInstrumentationFix requires its own proof data (deployed + candidate PatriotPotAuthParityAssociation subtree text, and the expected f502213-patched subtree); none was supplied. Fail closed -- this switch must not widen the allowlist by itself."
+        }
+        $normDeployed = ($DeployedAuthParityAssociationSubtreeText -replace "`r`n", "`n").Trim()
+        $normCandidate = ($CandidateAuthParityAssociationSubtreeText -replace "`r`n", "`n").Trim()
+        $normExpected = ($ExpectedInstrumentationFixAssociationSubtreeText -replace "`r`n", "`n").Trim()
+        if ($normCandidate -ne $normExpected) {
+            throw "Candidate PatriotPotAuthParityAssociation subtree does not match the expected f502213 instrumentation-only patch. Fail closed -- this is not proven to be instrumentation-only."
+        }
+        if ($normDeployed -eq $normCandidate) {
+            throw "-IncludeAuthParityInstrumentationFix was requested but the candidate association subtree is unchanged from deployed; there is nothing to apply. Remove the switch or supply a real instrumentation-fix candidate."
+        }
+        $allowed = @($baseAllowed + "PatriotPotAuthParityAssociation")
+    } else {
+        $allowed = $baseAllowed
+        if ($actualResources -contains "PatriotPotAuthParityAssociation") {
+            throw "H2 change set unexpectedly touches PatriotPotAuthParityAssociation. This is the AuthParity hitchhiking prohibition: H2 must never carry an AuthParity-track change unless -IncludeAuthParityInstrumentationFix is explicitly passed with its own proof. Fail closed."
+        }
+    }
+
+    foreach ($required in $requiredResources) {
+        if ($actualResources -notcontains $required) {
+            throw "H2 change set lacks required resource update: $required"
+        }
+    }
+
+    $unexpected = @($actualResources | Where-Object { $allowed -notcontains $_ })
+    if ($unexpected.Count -gt 0) {
+        throw "H2 change set contains resource(s) outside the allowlist: $($unexpected -join ', ')"
+    }
+
+    $assocChange = ($changes | Where-Object { $_.ResourceChange.LogicalResourceId -eq "PatriotPotDiscordMonitorAssociation" }).ResourceChange
+    if ($assocChange.Action -ne "Modify") {
+        throw "PatriotPotDiscordMonitorAssociation must be a Modify; found: $($assocChange.Action)"
+    }
+
+    $roleChange = ($changes | Where-Object { $_.ResourceChange.LogicalResourceId -eq "PatriotPotInstanceRole" }).ResourceChange
+    if ($roleChange.Action -ne "Modify") {
+        throw "PatriotPotInstanceRole must be a Modify; found: $($roleChange.Action)"
+    }
+    if ($roleChange.PSObject.Properties.Name -contains "Replacement" -and $roleChange.Replacement -ne "False") {
+        throw "PatriotPotInstanceRole replacement must be False; found: $($roleChange.Replacement)"
+    }
+
+    if ($actualResources -contains "PatriotPotAuthParityAssociation") {
+        $authParityAssocChange = ($changes | Where-Object { $_.ResourceChange.LogicalResourceId -eq "PatriotPotAuthParityAssociation" }).ResourceChange
+        if ($authParityAssocChange.Action -ne "Modify") {
+            throw "PatriotPotAuthParityAssociation must be a Modify under -IncludeAuthParityInstrumentationFix; found: $($authParityAssocChange.Action)"
+        }
+        if ($authParityAssocChange.PSObject.Properties.Name -contains "Replacement" -and $authParityAssocChange.Replacement -ne "False") {
+            throw "PatriotPotAuthParityAssociation replacement must be False; found: $($authParityAssocChange.Replacement)"
+        }
+    }
+
+    if ($actualResources -contains "EvidenceBucketPolicy") {
+        $bucketPolicyChange = ($changes | Where-Object { $_.ResourceChange.LogicalResourceId -eq "EvidenceBucketPolicy" }).ResourceChange
+        if (-not (Test-EvidenceBucketPolicyChangeIsDependencyOnly $bucketPolicyChange)) {
+            throw "H2 change set modifies EvidenceBucketPolicy with a non-dependency-only change; this requires separate review."
+        }
+    }
+}
+
 function New-AuthParityChangeSet([object]$Bundle, [object]$TemplateSnapshot, [string]$ExpectedArn) {
     # Scope-contamination checking already happened (Assert-TemplateSnapshotParametersAreAccountedFor,
     # called before Publish-AuthParityBundle in the $AuthParity flow below).
@@ -1362,13 +1760,33 @@ if ($H2) {
         return
     }
 
+    # Required order (do not reorder), mirroring the auth-parity flow: build
+    # the candidate from the LIVE deployed template BEFORE any AWS write,
+    # verify it is free of undeployed non-H2 scope BEFORE any AWS write, and
+    # only then publish.
+    Section "RESOLVE H2-ONLY TEMPLATE SNAPSHOT (LIVE DEPLOYED TEMPLATE + VERIFIED PATCH)"
+    $deployedSnapshot = Get-DeployedTemplateSnapshot
+    Write-Host "Deployed StackId: $($deployedSnapshot.StackId)"
+    Write-Host "Deployed template SHA-256: $($deployedSnapshot.TemplateSha256)"
+    $h2Snapshot = New-H2TemplateSnapshot $deployedSnapshot
+    Write-Host "H2 snapshot base: $($h2Snapshot.BaseProvenance)"
+    Write-Host "H2 snapshot path: $($h2Snapshot.Path)"
+    Write-Host "H2 snapshot SHA-256: $($h2Snapshot.Sha256)"
+
+    $deployedParamNames = @($deployedSnapshot.Parameters.ParameterKey)
+    Assert-H2TemplateSnapshotParametersAreAccountedFor $h2Snapshot.Path $deployedParamNames
+    Write-Host "Snapshot parameter scope verified: no undeployed non-H2 parameters present."
+
     Section "PUBLISH CONTENT-ADDRESSED H2 SUPPORT BUNDLE"
     $bundle = Publish-BootstrapBundle $EvidenceBucket
     Write-Host "Bundle: $($bundle.BundleId)"
     Write-Host "Assets: $($bundle.AssetCount)"
 
     Section "CREATE AND REVIEW H2 CLOUDFORMATION CHANGE SET"
-    $changeSet = New-H2ChangeSet $bundle
+    if ($IncludeAuthParityInstrumentationFix) {
+        Write-Host "-IncludeAuthParityInstrumentationFix requested: this run requires its own proof data, supplied separately, or it fails closed (see Assert-H2CandidateScope)."
+    }
+    $changeSet = New-H2ChangeSet -Bundle $bundle -TemplateSnapshot $h2Snapshot -IncludeAuthParityInstrumentationFix:$IncludeAuthParityInstrumentationFix
     Write-Host "Change set: $($changeSet.Id)"
     Write-Host "Resource inventory (authoritative, no --include-property-values):"
     $changeSet.PlainReview.Changes | ForEach-Object {
@@ -1387,7 +1805,7 @@ if ($H2) {
     }
 
     if (-not $ExecuteChangeSet) {
-        Write-Host "Change set passed the H2 allowlist guard (no replacement, no resource outside PatriotPotDiscordMonitorAssociation / PatriotPotInstanceRole / conditionally-verified EvidenceBucketPolicy / PatriotPotEgressFirewallAssociation); not executed."
+        Write-Host "Change set passed the H2 allowlist guard (no replacement anywhere, PatriotPotInstanceV2 absent, no resource outside PatriotPotDiscordMonitorAssociation / PatriotPotInstanceRole / conditionally-verified EvidenceBucketPolicy, PatriotPotAuthParityAssociation absent unless proof-gated); not executed."
         return
     }
 

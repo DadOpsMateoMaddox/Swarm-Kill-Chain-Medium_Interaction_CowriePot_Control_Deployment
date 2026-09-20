@@ -1,0 +1,78 @@
+{
+  "schema": "patriotpot-gate-template-patch/v1",
+  "gate": "H2",
+  "version": 2,
+  "description": "H2 threat-intelligence enrichment + Discord webhook separation. Applied to the LIVE deployed template only; never derived from Git HEAD or the working tree.",
+  "provenance": {
+    "derived_from_worktree_template_sha256": "65c64fd203ba00bce72e763a801fd554a6a50c91774b44e61c3fec0e186c9607",
+    "verified_against_live_template_sha256": "f583e85c0dde0ed4c108d271c6f34e5c6af97af80459dd05cec2894f8266e28e",
+    "live_template_retrieved_utc": "2026-09-19T23:19:39.617344+00:00",
+    "stack_id": "arn:aws:cloudformation:us-east-1:706162601288:stack/patriotpot-2026-control-prod/90c016a0-af23-11f1-8878-0affff84d99f",
+    "resulting_candidate_sha256": "58f19fc073abce461140709b390b5a15895c9014becdd7c683d98ccee0a0192a"
+  },
+  "forbidden_in_change_set": {
+    "PatriotPotInstanceV2": "Replacement ends Epoch B and destroys the on-disk Cowrie corpus.",
+    "__any__": "Replacement: True on any resource is a hard fail for this gate."
+  },
+  "requires_unchanged_resolved_content": [
+    "PatriotPotAuthParityAssociation"
+  ],
+  "excluded_entries": [
+    {
+      "id": "H2-U1-userdata-intel-parameter",
+      "scope": "EXCLUDED_REPLACEMENT_RISK",
+      "reason": "Would insert DISCORD_INTEL_PARAMETER_NAME into PatriotPotInstanceV2 UserData. UserData is a replacement-triggering property on AWS::EC2::Instance; applying it would destroy and recreate the live honeypot, ending Epoch B (T0 = 2026-09-19T22:08:04.614016217Z) and the on-disk Cowrie corpus. The running instance already receives this variable via H2-A1's discord.env patch, so the only thing forgone is a future first boot -- which must be handled by a gate that is explicitly about instance replacement."
+    }
+  ],
+  "entries": [
+    {
+      "id": "H2-P1-intel-webhook-parameter",
+      "scope": "H2_SEMANTIC_SCOPE",
+      "description": "Add DiscordIntelWebhookParameterName and mark the legacy webhook as the raw stream.",
+      "mode": "replace_once",
+      "find": "      Existing SSM SecureString parameter read locally by the Discord monitor.\n      The value is never passed through CloudFormation or written to source.\n\n  InstanceType:",
+      "replace": "      Existing SSM SecureString parameter read locally by the Discord monitor.\n      The value is never passed through CloudFormation or written to source.\n      Carries the legacy/raw per-event notification stream only.\n\n  DiscordIntelWebhookParameterName:\n    Type: String\n    Default: /patriotpot/2026-control/discord-intel-webhook\n    AllowedPattern: '^/[A-Za-z0-9_.:/-]+$'\n    Description: >\n      Existing SSM SecureString parameter read locally by the Discord monitor\n      for the H2 clustered/enriched intelligence summary stream. Independent\n      of DiscordWebhookParameterName: its own credential, queue, and rate\n      governor, so an outage on one channel never stalls the other. The value\n      is never passed through CloudFormation or written to source.\n\n  InstanceType:"
+    },
+    {
+      "id": "H2-I1a-bootstrap-read-arn-rationale",
+      "scope": "H2_SEMANTIC_SCOPE",
+      "description": "Carry the reviewed rationale for enumerating per-object ARNs instead of a prefix wildcard.",
+      "mode": "insert_before_once",
+      "anchor": "                  - 's3:GetObject'\n                Resource:\n",
+      "insert": "                # Explicit per-object ARNs, not a prefix wildcard: a wildcard\n                # here would grant read access to any future object placed\n                # under this bundle prefix, not just the ones the running\n                # association actually fetches today -- a real (if narrow)\n                # privilege expansion, not merely a maintenance convenience.\n                # This list must be kept in sync with the association's\n                # fetch_h2_support_file calls below.\n",
+      "_anchor_note": "inserted between the Action list and Resource:, matching the reviewed worktree layout"
+    },
+    {
+      "id": "H2-I1b-bootstrap-read-support-file-arns",
+      "scope": "H2_SEMANTIC_SCOPE",
+      "description": "Add the 14 H2 support-file object ARNs to PatriotPotBootstrapRead's explicit list.",
+      "mode": "insert_after_once",
+      "anchor": "                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${AuthParityBundleId}/userdb.txt'\n",
+      "insert": "                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/session_cluster.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/discord_rate_governor.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel__init__.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_observables.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_parameter_store.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_cache.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_provider_result.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_http_client.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_greynoise.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_virustotal.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_shodan.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_broker.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_rate_governor.py'\n                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/threat_intel_worker.py'\n"
+    },
+    {
+      "id": "H2-I2-discord-credential-two-arns",
+      "scope": "H2_SEMANTIC_SCOPE",
+      "description": "PatriotPotDiscordCredential gains the intel webhook parameter ARN alongside the legacy one.",
+      "mode": "replace_once",
+      "find": "                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${DiscordWebhookParameterName}'\n",
+      "replace": "                # Two explicit, independent parameter ARNs: legacy raw\n                # webhook and H2 intel webhook. Never a prefix wildcard.\n                Resource:\n                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${DiscordWebhookParameterName}'\n                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${DiscordIntelWebhookParameterName}'\n"
+    },
+    {
+      "id": "H2-I3-threat-intel-credential-policy",
+      "scope": "H2_SEMANTIC_SCOPE",
+      "description": "Add the PatriotPotThreatIntelCredential inline policy (explicit provider-key parameter ARNs).",
+      "mode": "insert_before_once",
+      "anchor": "\n  PatriotPotInstanceProfile:",
+      "insert": "\n        - PolicyName: PatriotPotThreatIntelCredential\n          PolicyDocument:\n            Version: '2012-10-17'\n            Statement:\n              - Effect: Allow\n                Action:\n                  - 'ssm:GetParameter'\n                # H2: exactly the three threat-intel provider keys, no\n                # wildcard. Each is a fixed path, not a stack parameter, per\n                # the H2 requirement that this scope stay narrow and exact.\n                Resource:\n                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/patriotpot/2026-control/greynoise-api-key'\n                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/patriotpot/2026-control/virustotal-api-key'\n                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/patriotpot/2026-control/shodan-api-key'\n"
+    },
+    {
+      "id": "H2-A1-discord-monitor-association",
+      "scope": "H2_SEMANTIC_SCOPE",
+      "description": "Discord-monitor association: fetch the H2 support files by pinned hash and teach the running instance the intel-channel parameter name. Merged into one entry because both edits target the same anchor.",
+      "mode": "insert_before_once",
+      "anchor": "              systemctl try-restart patriotpot-discord.service\n              systemctl is-active --quiet patriotpot-discord.service",
+      "insert": "              install -d -m 0755 -o root -g root /usr/local/libexec/threat_intel\n              install -d -m 0700 -o patriot-discord -g patriot-discord /var/lib/patriotpot-discord/threat-intel\n              fetch_h2_support_file() {\n                local asset_name=\"$1\"\n                local expected_sha256=\"$2\"\n                local destination=\"$3\"\n                AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \\\n                  --bucket '${EvidenceBucket}' \\\n                  --key \"bootstrap/${FirewallBundleId}/$asset_name\" \\\n                  \"/opt/patriotpot-discord/$asset_name.new\" \\\n                  --output json \\\n                  --profile patriotpot \\\n                  --region us-east-1\n                printf '%s  %s\\n' \"$expected_sha256\" \"/opt/patriotpot-discord/$asset_name.new\" |\n                  sha256sum --check --status\n                install -m 0644 -o root -g root \"/opt/patriotpot-discord/$asset_name.new\" \"$destination\"\n                rm -f \"/opt/patriotpot-discord/$asset_name.new\"\n              }\n              fetch_h2_support_file session_cluster.py \\\n                b0ae7a61f5ed3ca0055b7f3306be22127ef4a796b4e1562f06dff310b13e475c \\\n                /usr/local/libexec/session_cluster.py\n              fetch_h2_support_file discord_rate_governor.py \\\n                e273bb8f3e7876f58ae2d1bb10220bc1eaf5560ba0cf2f60ab34c82d77026f42 \\\n                /usr/local/libexec/discord_rate_governor.py\n              fetch_h2_support_file threat_intel__init__.py \\\n                d5986e22011704756d751f43dc9333a547271cee81052c347d411e9e5e1b880a \\\n                /usr/local/libexec/threat_intel/__init__.py\n              fetch_h2_support_file threat_intel_observables.py \\\n                3cf659977250161e413d6047a29a43b35b3919fbfa2e6f119e08aac89b047cff \\\n                /usr/local/libexec/threat_intel/observables.py\n              fetch_h2_support_file threat_intel_parameter_store.py \\\n                e0d4b34a76eab34db939b18f37b1d1d987aad757827089494b32f17e27bda9fe \\\n                /usr/local/libexec/threat_intel/parameter_store.py\n              fetch_h2_support_file threat_intel_cache.py \\\n                cd429e9d8c787084d52133f1e4b04925fb38f2458f8e1bc5b0f7fc386febf92a \\\n                /usr/local/libexec/threat_intel/cache.py\n              fetch_h2_support_file threat_intel_provider_result.py \\\n                2bf42c481b14ca2dddbcb3fbe11bea7861cc9ca68a64ef078065fafc82c9c0b4 \\\n                /usr/local/libexec/threat_intel/provider_result.py\n              fetch_h2_support_file threat_intel_http_client.py \\\n                4aca1fa502cd234d832b5cf012909cc8a886bf5f6aa29e1ff7ee1e79470d6e7e \\\n                /usr/local/libexec/threat_intel/http_client.py\n              fetch_h2_support_file threat_intel_greynoise.py \\\n                200ff0abfbfb7a7197a0187139ee8e634ab7e9f1fa92f38400c6278701a3eefd \\\n                /usr/local/libexec/threat_intel/greynoise.py\n              fetch_h2_support_file threat_intel_virustotal.py \\\n                2a2a5c43f27405f7ca2f7c6c4686de7872632c7737fd9ee02bac333833dd91d2 \\\n                /usr/local/libexec/threat_intel/virustotal.py\n              fetch_h2_support_file threat_intel_shodan.py \\\n                4cb7a9d25631240c3e600be7c235d38029b06fd1390fb97768aafdd232f1da1d \\\n                /usr/local/libexec/threat_intel/shodan.py\n              fetch_h2_support_file threat_intel_broker.py \\\n                7c4934aa7d28a2ae258254f39af5cdf67fcd8655dd57615b9f7c7f39985b34a4 \\\n                /usr/local/libexec/threat_intel/broker.py\n              fetch_h2_support_file threat_intel_rate_governor.py \\\n                0a4b1ce978506c263e9c1c164dad3c0a1dc0fe944021e208f795606da742539e \\\n                /usr/local/libexec/threat_intel/rate_governor.py\n              fetch_h2_support_file threat_intel_worker.py \\\n                68d5cf8d6d2cab24e25a83d6ccc987d38cbf61784fa8be75909eb31a0a65e6e1 \\\n                /usr/local/libexec/threat_intel/worker.py\n              # Webhook separation: Control-0 was already bootstrapped before\n              # DISCORD_INTEL_PARAMETER_NAME existed, so this association is\n              # what teaches the running instance about the second,\n              # independent intel-channel credential. Idempotent: replaces\n              # any prior value of this one key, leaves every other line\n              # (including the legacy DISCORD_PARAMETER_NAME) untouched.\n              if [[ -f /etc/patriotpot/discord.env ]]; then\n                grep -v '^DISCORD_INTEL_PARAMETER_NAME=' /etc/patriotpot/discord.env \\\n                  >/etc/patriotpot/discord.env.new || true\n                printf 'DISCORD_INTEL_PARAMETER_NAME=%s\\n' \\\n                  '${DiscordIntelWebhookParameterName}' >>/etc/patriotpot/discord.env.new\n                chmod 0640 /etc/patriotpot/discord.env.new\n                chown root:patriot-discord /etc/patriotpot/discord.env.new\n                mv /etc/patriotpot/discord.env.new /etc/patriotpot/discord.env\n              fi\n"
+    }
+  ]
+}

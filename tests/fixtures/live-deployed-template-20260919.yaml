@@ -1,0 +1,739 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  PatriotPot 2026 native control sensor. Official pinned Amazon
+  Linux 2, side-by-side CPython 3.8, Cowrie v2.5.0, systemd, local JSON,
+  independent S3 evidence archival, CloudWatch operations, and SSM-only
+  management. Exposure Gate E1: this template declares exactly one inbound
+  security-group rule, TCP/2222 from 0.0.0.0/0, for the Cowrie listener.
+
+Parameters:
+  HostAmiId:
+    Type: AWS::EC2::Image::Id
+    AllowedPattern: '^ami-[0-9a-f]+$'
+    Description: >
+      Pinned official Amazon Linux 2 x86_64 HVM EBS AMI. The orchestrator
+      verifies owner 137112412989 and ImageOwnerAlias amazon before deployment.
+
+  BootstrapBundleId:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}$'
+    Description: SHA-256 content address of the native bootstrap script
+
+  BootstrapScriptSha256:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}$'
+    Description: SHA-256 used to verify the downloaded bootstrap entry point
+
+  FirewallBundleId:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}$'
+    Description: >
+      Content-addressed bundle supplying the independently applied persistent
+      egress firewall. It is intentionally distinct from BootstrapBundleId so
+      the current closed-ingress instance is not replaced to install it.
+
+  FirewallScriptSha256:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}$'
+    Description: SHA-256 for patriotpot-egress-firewall.sh in FirewallBundleId
+
+  FirewallUnitSha256:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}$'
+    Description: SHA-256 for patriotpot-egress-firewall.service in FirewallBundleId
+
+  DiscordMonitorSha256:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}$'
+    Description: SHA-256 for the direct public-HTTPS Discord monitor in FirewallBundleId
+
+  AuthParityBundleId:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}$'
+    Description: >
+      Content-addressed bundle supplying only the auth-parity-corrected
+      userdb.txt. Intentionally distinct from FirewallBundleId so this
+      Control-parity correction stays reviewable and revertible independent
+      of H2 or the egress firewall, and so the current instance is not
+      replaced to apply it.
+
+  UserdbTxtSha256:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{64}$'
+    Description: SHA-256 for the corrected userdb.txt in AuthParityBundleId
+
+  CowrieHostKeySecret:
+    Type: String
+    NoEcho: true
+    AllowedPattern: '^arn:aws:secretsmanager:us-east-1:[0-9]{12}:secret:patriotpot/2026-control/cowrie-host-key-[A-Za-z0-9]+$'
+    Description: ARN of the Secrets Manager secret containing the rotated Cowrie host key
+
+  CowrieHostKeyVersionId:
+    Type: String
+    NoEcho: true
+    AllowedPattern: '^[0-9a-f-]{36}$'
+    Description: Exact AWSCURRENT version ID of the rotated Cowrie host-key secret
+
+  DiscordWebhookParameterName:
+    Type: String
+    Default: /patriotpot/2026-control/discord-webhook
+    AllowedPattern: '^/[A-Za-z0-9_.:/-]+$'
+    Description: >
+      Existing SSM SecureString parameter read locally by the Discord monitor.
+      The value is never passed through CloudFormation or written to source.
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t3.micro]
+    Description: Control instance size preserved from the 2025 baseline
+
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging, validation]
+    Description: Deployment environment
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # Evidence storage
+  # ---------------------------------------------------------------------------
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'patriotpot-evidence-${AWS::AccountId}-${AWS::Region}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteNoncurrentVersionsAfter90Days
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
+            Status: Enabled
+      Tags:
+        - Key: Purpose
+          Value: PatriotPot immutable content-addressed evidence
+
+  EvidenceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt EvidenceBucket.Arn
+              - !Sub '${EvidenceBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+          - Sid: DenyUnconditionalControlArchiveWrites
+            Effect: Deny
+            Principal:
+              AWS: !GetAtt PatriotPotInstanceRole.Arn
+            Action: 's3:PutObject'
+            Resource: !Sub '${EvidenceBucket.Arn}/control/${Environment}/sensors/control-0/instances/*/segments/*'
+            Condition:
+              StringNotEquals:
+                's3:if-none-match': '*'
+
+  EvidenceClaimTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: LockKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: LockKey
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: Expires
+        Enabled: true
+      Tags:
+        - Key: Purpose
+          Value: Deprecated PatriotPot evidence claims retained pending deletion approval
+
+  # ---------------------------------------------------------------------------
+  # IAM: no ECR/container permissions; evidence and credentials are scoped.
+  # ---------------------------------------------------------------------------
+  PatriotPotInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'patriotpot-instance-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        - PolicyName: PatriotPotBootstrapRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource: !Sub '${EvidenceBucket.Arn}/bootstrap/${BootstrapBundleId}/*'
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource:
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/patriotpot-egress-firewall.sh'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/patriotpot-egress-firewall.service'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${FirewallBundleId}/discord-monitor.py'
+                  - !Sub '${EvidenceBucket.Arn}/bootstrap/${AuthParityBundleId}/userdb.txt'
+
+        - PolicyName: PatriotPotEvidenceArchive
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:GetObjectVersion'
+                  - 's3:PutObject'
+                Resource: !Sub '${EvidenceBucket.Arn}/control/${Environment}/sensors/control-0/instances/*/segments/*'
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                Resource: !Sub '${EvidenceBucket.Arn}/control/${Environment}/bootstrap-diagnostics/*'
+
+        - PolicyName: PatriotPotCloudWatch
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogStream'
+                  - 'logs:DescribeLogStreams'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/patriotpot/*:*'
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': PatriotPot/Control
+
+        - PolicyName: PatriotPotCowrieHostKey
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource: !Ref CowrieHostKeySecret
+
+        - PolicyName: PatriotPotDiscordCredential
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${DiscordWebhookParameterName}'
+
+  PatriotPotInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref PatriotPotInstanceRole
+
+  # ---------------------------------------------------------------------------
+  # Network: public routing for outbound bootstrap/telemetry, zero ingress.
+  # ---------------------------------------------------------------------------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'patriotpot-vpc-${Environment}'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  PatriotPotSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      # Immutable legacy description retained to preserve the existing SG ID.
+      # Effective policy is zero ingress; tags and validation carry that state.
+      GroupDescription: PatriotPot 2026 honeypot - attacker-facing ports only; no management SSH
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # Exposure Gate E1: the sole intended attacker-facing ingress. Cowrie
+        # listens locally on TCP/2222; no other port is opened here.
+        - IpProtocol: tcp
+          FromPort: 2222
+          ToPort: 2222
+          CidrIp: 0.0.0.0/0
+          Description: Cowrie attacker-facing SSH listener (Exposure Gate E1)
+      SecurityGroupEgress:
+        # The VPC declaration is 10.0.0.0/16.  AmazonProvidedDNS is VPC+2,
+        # therefore the only resolver address is objectively 10.0.0.2/32.
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 10.0.0.2/32
+          Description: AmazonProvidedDNS derived from declared VPC CIDR plus two
+        - IpProtocol: tcp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 10.0.0.2/32
+          Description: AmazonProvidedDNS TCP fallback derived from VPC CIDR plus two
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Direct public HTTP only
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Direct public HTTPS for SSM, S3, CloudWatch, and Discord
+      Tags:
+        - Key: Name
+          Value: !Sub 'patriotpot-sg-${Environment}'
+        - Key: Exposure
+          Value: disabled
+
+  # ---------------------------------------------------------------------------
+  # CloudWatch is an operational copy; local JSON and S3 remain authoritative.
+  # ---------------------------------------------------------------------------
+  PatriotPotLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: /patriotpot/honeypot
+      RetentionInDays: 30
+
+  PatriotPotLogGroupJson:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: /patriotpot/honeypot-json
+      RetentionInDays: 30
+
+  PatriotPotOperationsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: /patriotpot/operations
+      RetentionInDays: 30
+
+  # ---------------------------------------------------------------------------
+  # Native control instance. ImageId change deliberately replaces failed AL2023.
+  # CreationPolicy keeps the old instance until native bootstrap signals success.
+  # ---------------------------------------------------------------------------
+  PatriotPotInstanceV2:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - AttachGateway
+      - EvidenceBucketPolicy
+      - PatriotPotLogGroup
+      - PatriotPotLogGroupJson
+      - PatriotPotOperationsLogGroup
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT50M
+    Properties:
+      ImageId: !Ref HostAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref PatriotPotInstanceProfile
+      # NetworkInterfaces is a replacement-only EC2 property. Referencing the
+      # content-addressed bootstrap bundle makes each reviewed native bundle
+      # deployment install on a fresh instance rather than silently changing
+      # UserData that an already-running instance would never execute.
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeleteOnTermination: true
+          Description: !Sub 'patriotpot-native-bootstrap-${BootstrapBundleId}'
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref PatriotPotSecurityGroup
+          SubnetId: !Ref PublicSubnet
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpPutResponseHopLimit: 1
+        HttpTokens: required
+        InstanceMetadataTags: disabled
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: 16
+            VolumeType: gp3
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -uo pipefail
+          umask 027
+          result=0
+          (
+            set -euo pipefail
+            install -d -m 0700 /opt/patriotpot-bootstrap
+            install -d -m 0755 /etc/aws /var/log/patriotpot
+            exec >>/var/log/patriotpot/patriotpot-init.log 2>&1
+
+            printf '%s\n' \
+              '[profile patriotpot]' \
+              'region = us-east-1' \
+              'output = json' \
+              >/etc/aws/config
+            chmod 0644 /etc/aws/config
+            export AWS_CONFIG_FILE=/etc/aws/config
+
+            yum install -y aws-cfn-bootstrap awscli
+            aws s3api get-object \
+              --bucket '${EvidenceBucket}' \
+              --key 'bootstrap/${BootstrapBundleId}/bootstrap-native.sh' \
+              /opt/patriotpot-bootstrap/bootstrap-native.sh.new \
+              --output json \
+              --profile patriotpot \
+              --region us-east-1 >/dev/null
+            printf '%s  %s\n' \
+              '${BootstrapScriptSha256}' \
+              /opt/patriotpot-bootstrap/bootstrap-native.sh.new |
+              sha256sum --check --status
+            sed -i 's/\r$//' /opt/patriotpot-bootstrap/bootstrap-native.sh.new
+            mv /opt/patriotpot-bootstrap/bootstrap-native.sh.new \
+              /opt/patriotpot-bootstrap/bootstrap-native.sh
+            chmod 0750 /opt/patriotpot-bootstrap/bootstrap-native.sh
+
+            ASSET_BUCKET='${EvidenceBucket}' \
+            ASSET_PREFIX='bootstrap/${BootstrapBundleId}' \
+            COWRIE_HOST_KEY_SECRET='${CowrieHostKeySecret}' \
+            COWRIE_HOST_KEY_VERSION_ID='${CowrieHostKeyVersionId}' \
+            DISCORD_PARAMETER_NAME='${DiscordWebhookParameterName}' \
+            EVIDENCE_BUCKET='${EvidenceBucket}' \
+            EVIDENCE_PREFIX='control/${Environment}/sensors/control-0' \
+            AWS_PROFILE='patriotpot' \
+            AWS_REGION='us-east-1' \
+              /opt/patriotpot-bootstrap/bootstrap-native.sh
+          ) || result=$?
+
+          failure_reason="native bootstrap exit=$result"
+          failure_phase="unknown"
+          if [[ "$result" -ne 0 &&
+                -r /var/log/patriotpot/bootstrap-failure-phase ]]; then
+            failure_phase="$(
+              tr -cd 'A-Za-z0-9_:-' \
+                </var/log/patriotpot/bootstrap-failure-phase | head -c 120
+            )"
+            if [[ -n "$failure_phase" ]]; then
+              failure_reason="native bootstrap failed phase=$failure_phase"
+            fi
+          fi
+          if [[ "$result" -ne 0 ]]; then
+            if [[ -z "$failure_phase" ]]; then
+              failure_phase="unknown"
+            fi
+            diagnostic_key="control/${Environment}/bootstrap-diagnostics/${BootstrapBundleId}/$(
+              date -u +%Y%m%dT%H%M%SZ
+            )-$failure_phase.txt"
+            # Archive only the fixed diagnostic string, never bootstrap output
+            # or credentials. Failure artifacts are encrypted and stay under
+            # the instance role's existing evidence prefix.
+            printf '%s\n' "$failure_reason" |
+              AWS_CONFIG_FILE=/etc/aws/config /usr/bin/aws s3 cp - \
+                "s3://${EvidenceBucket}/$diagnostic_key" \
+                --sse AES256 \
+                --no-progress \
+                --only-show-errors \
+                --profile patriotpot \
+                --region us-east-1 || true
+          fi
+          /opt/aws/bin/cfn-signal \
+            --exit-code "$result" \
+            --reason "$failure_reason" \
+            --stack '${AWS::StackName}' \
+            --resource PatriotPotInstanceV2 \
+            --region us-east-1
+          exit "$result"
+      Tags:
+        - Key: Name
+          Value: !Sub 'patriotpot-2026-native-${Environment}'
+        - Key: Control
+          Value: Control-0
+        - Key: Runtime
+          Value: native
+        - Key: Exposure
+          Value: disabled
+
+  # Applies the two content-addressed firewall assets through SSM without an
+  # instance replacement and without an inbound path.  It has no schedule:
+  # this one-time association is configuration, not a collection schedule.
+  PatriotPotEgressFirewallAssociation:
+    Type: AWS::SSM::Association
+    DependsOn:
+      - PatriotPotInstanceV2
+      - PatriotPotInstanceRole
+    Properties:
+      AssociationName: !Sub '${AWS::StackName}-egress-firewall'
+      Name: AWS-RunShellScript
+      Targets:
+        - Key: InstanceIds
+          Values:
+            - !Ref PatriotPotInstanceV2
+      WaitForSuccessTimeoutSeconds: 600
+      Parameters:
+        commands:
+          - !Sub |
+              set -euo pipefail
+              install -d -m 0755 -o root -g root /opt/patriotpot-firewall
+              AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
+                --bucket '${EvidenceBucket}' \
+                --key 'bootstrap/${FirewallBundleId}/patriotpot-egress-firewall.sh' \
+                /opt/patriotpot-firewall/patriotpot-egress-firewall.sh.new \
+                --output json \
+                --profile patriotpot \
+                --region us-east-1
+              printf '%s  %s\n' \
+                '${FirewallScriptSha256}' \
+                /opt/patriotpot-firewall/patriotpot-egress-firewall.sh.new |
+                sha256sum --check --status
+              install -m 0755 -o root -g root \
+                /opt/patriotpot-firewall/patriotpot-egress-firewall.sh.new \
+                /usr/local/libexec/patriotpot-egress-firewall
+              rm -f /opt/patriotpot-firewall/patriotpot-egress-firewall.sh.new
+              AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
+                --bucket '${EvidenceBucket}' \
+                --key 'bootstrap/${FirewallBundleId}/patriotpot-egress-firewall.service' \
+                /opt/patriotpot-firewall/patriotpot-egress-firewall.service.new \
+                --output json \
+                --profile patriotpot \
+                --region us-east-1
+              printf '%s  %s\n' \
+                '${FirewallUnitSha256}' \
+                /opt/patriotpot-firewall/patriotpot-egress-firewall.service.new |
+                sha256sum --check --status
+              install -m 0644 -o root -g root \
+                /opt/patriotpot-firewall/patriotpot-egress-firewall.service.new \
+                /etc/systemd/system/patriotpot-egress-firewall.service
+              rm -f /opt/patriotpot-firewall/patriotpot-egress-firewall.service.new
+              systemctl daemon-reload
+              systemctl enable --now patriotpot-egress-firewall.service
+              systemctl is-active --quiet patriotpot-egress-firewall.service
+              systemctl is-enabled --quiet patriotpot-egress-firewall.service
+
+  # The monitor asset is independently verified and activated without changing
+  # its credential boundary. The association neither supplies nor prints a
+  # credential; a missing external credential remains an explicit delivery
+  # observation rather than a bootstrap or CloudFormation failure.
+  PatriotPotDiscordMonitorAssociation:
+    Type: AWS::SSM::Association
+    DependsOn:
+      - PatriotPotInstanceV2
+      - PatriotPotInstanceRole
+    Properties:
+      AssociationName: !Sub '${AWS::StackName}-discord-monitor'
+      Name: AWS-RunShellScript
+      Targets:
+        - Key: InstanceIds
+          Values:
+            - !Ref PatriotPotInstanceV2
+      WaitForSuccessTimeoutSeconds: 600
+      Parameters:
+        commands:
+          - !Sub |
+              set -euo pipefail
+              install -d -m 0755 -o root -g root /opt/patriotpot-discord
+              AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
+                --bucket '${EvidenceBucket}' \
+                --key 'bootstrap/${FirewallBundleId}/discord-monitor.py' \
+                /opt/patriotpot-discord/discord-monitor.py.new \
+                --output json \
+                --profile patriotpot \
+                --region us-east-1
+              printf '%s  %s\n' \
+                '${DiscordMonitorSha256}' \
+                /opt/patriotpot-discord/discord-monitor.py.new |
+                sha256sum --check --status
+              install -m 0755 -o root -g root \
+                /opt/patriotpot-discord/discord-monitor.py.new \
+                /usr/local/libexec/patriotpot-discord-monitor.py
+              rm -f /opt/patriotpot-discord/discord-monitor.py.new
+              systemctl try-restart patriotpot-discord.service
+              systemctl is-active --quiet patriotpot-discord.service
+
+  # Control-parity correction (auth semantics only). Deliberately isolated
+  # from PatriotPotDiscordMonitorAssociation and PatriotPotEgressFirewallAssociation:
+  # its own content-addressed bundle (AuthParityBundleId), its own IAM read
+  # grant, its own restart scope (cowrie.service only -- discord-monitor and
+  # the egress firewall are untouched by this association). This corrects
+  # userdb.txt to match the reconstructed 2025 steady-state authentication
+  # surface; it carries no telemetry, presentation, or enrichment changes.
+  PatriotPotAuthParityAssociation:
+    Type: AWS::SSM::Association
+    DependsOn:
+      - PatriotPotInstanceV2
+      - PatriotPotInstanceRole
+    Properties:
+      AssociationName: !Sub '${AWS::StackName}-auth-parity'
+      Name: AWS-RunShellScript
+      Targets:
+        - Key: InstanceIds
+          Values:
+            - !Ref PatriotPotInstanceV2
+      WaitForSuccessTimeoutSeconds: 600
+      Parameters:
+        commands:
+          - !Sub |
+              set -euo pipefail
+              echo "AUTH_PARITY_T_PRE=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+
+              pre_hash="absent"
+              if [[ -f /opt/cowrie/etc/userdb.txt ]]; then
+                pre_hash="$(sha256sum /opt/cowrie/etc/userdb.txt | cut -d' ' -f1)"
+              fi
+              echo "AUTH_PARITY_PRE_USERDB_SHA256=${!pre_hash}"
+
+              pid_before="$(systemctl show -p MainPID --value cowrie.service 2>/dev/null || echo unknown)"
+              echo "AUTH_PARITY_COWRIE_PID_BEFORE=${!pid_before}"
+
+              listener_before="$(ss -ltn 'sport = :2222' 2>/dev/null | tail -n +2 || true)"
+              echo "AUTH_PARITY_LISTENER_BEFORE=${!listener_before:-none}"
+
+              active_conn_before="$(ss -tn state established 'sport = :2222' 2>/dev/null | tail -n +2 | wc -l)"
+              echo "AUTH_PARITY_ACTIVE_CONNECTIONS_BEFORE=${!active_conn_before}"
+
+              install -d -m 0755 -o root -g root /opt/patriotpot-bootstrap
+              AWS_CONFIG_FILE=/etc/aws/config aws s3api get-object \
+                --bucket '${EvidenceBucket}' \
+                --key 'bootstrap/${AuthParityBundleId}/userdb.txt' \
+                /opt/patriotpot-bootstrap/userdb.txt.new \
+                --output json \
+                --profile patriotpot \
+                --region us-east-1
+              printf '%s  %s\n' \
+                '${UserdbTxtSha256}' \
+                /opt/patriotpot-bootstrap/userdb.txt.new |
+                sha256sum --check --status
+              sed -i 's/\r$//' /opt/patriotpot-bootstrap/userdb.txt.new
+              install -m 0644 -o root -g root \
+                /opt/patriotpot-bootstrap/userdb.txt.new \
+                /opt/cowrie/etc/userdb.txt
+              rm -f /opt/patriotpot-bootstrap/userdb.txt.new
+
+              echo "AUTH_PARITY_T_INSTALL=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+              echo "AUTH_PARITY_POST_USERDB_SHA256=$(sha256sum /opt/cowrie/etc/userdb.txt | cut -d' ' -f1)"
+
+              echo "AUTH_PARITY_T_RESTART_INITIATED=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+              systemctl try-restart cowrie.service
+              systemctl is-active --quiet cowrie.service
+              echo "AUTH_PARITY_T_RESTART_ACTIVE=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+
+              pid_after="$(systemctl show -p MainPID --value cowrie.service 2>/dev/null || echo unknown)"
+              echo "AUTH_PARITY_COWRIE_PID_AFTER=${!pid_after}"
+
+              listener_after="$(ss -ltn 'sport = :2222' 2>/dev/null | tail -n +2 || true)"
+              echo "AUTH_PARITY_LISTENER_AFTER=${!listener_after:-none}"
+
+              active_conn_after="$(ss -tn state established 'sport = :2222' 2>/dev/null | tail -n +2 | wc -l)"
+              echo "AUTH_PARITY_ACTIVE_CONNECTIONS_AFTER=${!active_conn_after}"
+
+  # The allocation remains the same CloudFormation resource during replacement.
+  PatriotPotEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref PatriotPotInstanceV2
+      Tags:
+        - Key: Name
+          Value: !Sub 'patriotpot-eip-${Environment}'
+        - Key: Exposure
+          Value: disabled
+
+Outputs:
+  ControlElasticIp:
+    Description: >
+      Preserved Elastic IP allocation. PRE-EXPOSURE: the attached security group
+      has zero IPv4 and IPv6 ingress rules; this is not an attacker endpoint.
+    Value: !Ref PatriotPotEIP
+
+  ExposureState:
+    Description: Network exposure gate
+    Value: NO_INGRESS_SSM_ONLY
+
+  EvidenceBucketName:
+    Description: Versioned S3 bucket for independent content-addressed evidence
+    Value: !Ref EvidenceBucket
+    Export:
+      Name: !Sub 'patriotpot-evidence-bucket-${Environment}'
+
+  InstanceId:
+    Description: Native Amazon Linux 2 EC2 instance ID
+    Value: !Ref PatriotPotInstanceV2
+
+  SSMSessionLink:
+    Description: SSM Session Manager console link; host sshd and TCP/22 ingress are disabled
+    Value: !Sub 'https://console.aws.amazon.com/systems-manager/session-manager/${PatriotPotInstanceV2}?region=${AWS::Region}'
