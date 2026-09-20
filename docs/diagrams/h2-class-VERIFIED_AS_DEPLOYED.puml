@@ -1,0 +1,217 @@
+@startuml h2-class-VERIFIED_AS_DEPLOYED
+' =============================================================================
+' STATUS: VERIFIED_AS_DEPLOYED
+'
+' Executed 2026-09-20. Structurally IDENTICAL to
+' h2-class-REVIEWED_CANDIDATE_PRE_DEPLOYMENT.puml -- no architectural delta.
+' Confirmed on the live host, not assumed:
+'   - deployed /usr/local/libexec/patriotpot-discord-monitor.py SHA-256
+'     c987b11d... == H2BundleId == H2DiscordMonitorSha256 == the reviewed
+'     candidate's own hash (gates/h2/h2-template-patch.json)
+'   - all 12 threat_intel/*.py files + session_cluster.py +
+'     discord_rate_governor.py present, hash-verified individually, all
+'     matching the published S3 bundle and git HEAD (commit 467498f)
+'   - `python3.8 -c "import session_cluster, discord_rate_governor,
+'     threat_intel.broker, threat_intel.worker"` against the deployed
+'     files: IMPORT_OK
+'
+' Change set: h2-final-20260920T212342Z, executed via CloudFormation
+' UPDATE_COMPLETE (T_EXECUTE_REQUESTED 2026-09-20T22:04:15Z, stack reached
+' UPDATE_COMPLETE 2026-09-20T22:04:58Z). Real transition boundary (H2_T0):
+' patriotpot-discord.service's own "Started" journal entry, 2026-09-20
+' 22:04:49 UTC -- NOT the CloudFormation timestamp, which only brackets it.
+'
+' One real, reported (not silently worked around) runtime gap: at H2_T0,
+' the intel-channel webhook parameter
+' (/patriotpot/2026-control/discord-intel-webhook) and all three provider
+' API-key parameters (greynoise/virustotal/shodan) do not yet exist in SSM
+' Parameter Store -- confirmed directly via ssm:DescribeParameters, not
+' assumed from a log line. ThreatIntelBroker.enrich_ip and CredentialCache
+' both degraded exactly as designed (missing_credential status envelopes;
+' delivery skipped with a logged warning, no crash) -- proven on the real
+' deployed code via a controlled fixture, not by re-running unit tests.
+' This is a credential-provisioning task, outside this gate's scope (the
+' gate deliberately never handles provider secrets); it does not indicate
+' a code or deployment defect. The legacy channel's own credential
+' (/patriotpot/2026-control/discord-webhook) IS present and confirmed
+' delivering (credential_available + delivery_success entries in the real
+' process's own ops log, both before and after H2_T0).
+' =============================================================================
+
+title H2 Class Diagram -- VERIFIED_AS_DEPLOYED
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+
+package "Raw Cowrie Telemetry" {
+  class "cowrie.json line" as RawLine <<external>> {
+    + bytes raw_line
+  }
+}
+
+package "discord-monitor.py (sidecar entrypoint)" {
+  class DiscordMonitorMain <<module functions>> {
+    + queue_line(state, raw_line, clusters)
+    + flush_expired_clusters(state, clusters, worker)
+    + drain_pending(state, credentials, governor, channel)
+    + format_alert(event) : dict
+    + post_payload(url, payload) : (bool, int, float)
+    + main()
+  }
+
+  class CredentialCache {
+    - parameter_name : str
+    + get(force=False) : Optional[str]
+  }
+
+  class DiscordRateGovernor {
+    + degraded : bool
+    + can_send() : bool
+    + note_send_attempt()
+    + note_success() : (bool, int)
+    + note_rate_limited(retry_after) : bool
+    + note_blocked(queue_depth)
+  }
+
+  class MonitorState <<persisted JSON>> {
+    + pending_legacy : list
+    + pending_intel : list
+    + clusters : dict
+    + flushed_awaiting_enrichment : dict
+    + dead_letters : list
+    + seen : list
+  }
+}
+
+package "session_cluster.py (H2 presentation clustering)" {
+  class SessionClusterManager {
+    - _clusters : Dict[str, SessionCluster]
+    + observe(event, now) : (key, cluster, is_new)
+    + flush_expired(now) : List[SessionCluster]
+    + evict_overflow() : List[SessionCluster]
+    + cluster_key_for(event) : str
+  }
+
+  class SessionCluster {
+    + key : str
+    + src_ip : str
+    + session_id : Optional[str]
+    + authenticated : bool
+    + username, password : Optional[str]
+    + commands : List[str]
+    + suspicious_commands : List[str]
+    + files_downloaded, files_uploaded : List[str]
+    + record_event(event, now, max_commands)
+    + is_priority_event(event) : bool
+  }
+
+  class "build_session_summary_payload()" as SummaryBuilder <<function>> {
+    + (cluster, enrichment) : dict
+  }
+}
+
+package "threat_intel (H2 enrichment)" {
+  class ThreatIntelWorker {
+    - _executor : ThreadPoolExecutor
+    - _inflight : int
+    - _max_inflight : int
+    + try_submit(cluster) : bool
+    + drain_completed() : List[(cluster, enrichment)]
+    + inflight_count() : int
+  }
+
+  class ThreatIntelBroker {
+    - _cache : EnrichmentCache
+    - _parameters : ParameterRegistry
+    - _rate_governors : Dict[str, ProviderRateGovernor]
+    + enrich_ip(ip_str) : Dict[str, dict]
+    - _lookup_one(provider, observable) : dict
+  }
+
+  class EnrichmentCache {
+    - _entries : Dict[str, dict]
+    + get(key) : Optional[dict]
+    + set(key, entry, ttl_seconds)
+  }
+
+  class ProviderRateGovernor {
+    + can_call() : bool
+    + note_call_attempt()
+    + note_success()
+    + note_rate_limited(retry_after_seconds)
+  }
+
+  class ParameterRegistry {
+    + get(provider_name) : Optional[str]
+  }
+
+  class ProviderResponse <<dataclass>> {
+    + status : str
+    + http_status : Optional[int]
+    + normalized : dict
+    + raw_body : Optional[bytes]
+    + retry_after_seconds : Optional[float]
+  }
+
+  package "provider modules" {
+    class greynoise <<module>> {
+      + lookup_ip(ip, api_key, timeout) : ProviderResponse
+    }
+    class virustotal <<module>> {
+      + lookup_ip(ip, api_key, timeout) : ProviderResponse
+    }
+    class shodan <<module>> {
+      + lookup_ip(ip, api_key, timeout) : ProviderResponse
+    }
+  }
+
+  class observables <<module>> {
+    + parse_public_ip(candidate) : Optional[IPAddress]
+    + parse_sha256(candidate) : Optional[str]
+  }
+}
+
+' -- relationships -----------------------------------------------------------
+
+RawLine --> DiscordMonitorMain : queue_line()
+DiscordMonitorMain --> SessionClusterManager : observe()
+SessionClusterManager "1" o-- "many" SessionCluster : manages
+
+DiscordMonitorMain --> ThreatIntelWorker : try_submit(cluster) / drain_completed()
+ThreatIntelWorker --> ThreatIntelBroker : enrich_ip(cluster.src_ip)\n(background thread)
+ThreatIntelBroker --> observables : parse_public_ip()
+ThreatIntelBroker --> EnrichmentCache : get()/set()
+ThreatIntelBroker --> ParameterRegistry : get(provider)
+ThreatIntelBroker "1" o-- "3" ProviderRateGovernor : one per provider\n(provider-global cooldown)
+ThreatIntelBroker --> greynoise : lookup_ip()
+ThreatIntelBroker --> virustotal : lookup_ip()
+ThreatIntelBroker --> shodan : lookup_ip()
+greynoise ..> ProviderResponse : returns
+virustotal ..> ProviderResponse : returns
+shodan ..> ProviderResponse : returns
+
+DiscordMonitorMain --> SummaryBuilder : build_session_summary_payload(\n  cluster, enrichment)
+SummaryBuilder --> SessionCluster : reads raw Cowrie fields
+SummaryBuilder ..> DiscordMonitorMain : returns embed payload\n(enqueued to pending_intel)
+
+DiscordMonitorMain --> MonitorState : pending_legacy / pending_intel
+DiscordMonitorMain --> CredentialCache : get() webhook URL
+DiscordMonitorMain --> DiscordRateGovernor : can_send() / note_*()
+
+note right of DiscordMonitorMain
+  format_alert() is the LEGACY / immediate
+  alert path. It reads only the raw Cowrie
+  event -- it has NO dependency edge to
+  ThreatIntelBroker, ThreatIntelWorker, or
+  EnrichmentCache anywhere in this diagram.
+  See the sequence diagram's third flow.
+end note
+
+note right of ThreatIntelBroker
+  Fail-open by construction: every provider
+  exception, timeout, 429, 5xx, or missing
+  credential yields a status envelope, never
+  a raised exception out of enrich_ip().
+end note
+
+@enduml

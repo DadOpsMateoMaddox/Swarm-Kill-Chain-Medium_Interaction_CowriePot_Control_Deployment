@@ -1,0 +1,144 @@
+@startuml h2-sequence-VERIFIED_AS_DEPLOYED
+' =============================================================================
+' STATUS: VERIFIED_AS_DEPLOYED
+' Same provenance as the companion class diagram
+' (h2-class-VERIFIED_AS_DEPLOYED.puml) -- confirmed on the live host, not
+' assumed. No architectural delta from REVIEWED_CANDIDATE_PRE_DEPLOYMENT.
+'
+' Flow 1 (normal enriched delivery) is deployed and code-verified via a
+' controlled fixture on the real host, but full live confirmation is
+' currently blocked on a credential-provisioning gap, not a code or
+' deployment defect: the intel webhook and all three provider API-key SSM
+' parameters do not yet exist (confirmed via ssm:DescribeParameters).
+'
+' Flow 2 (provider failure/degraded) is the flow actually exercised live at
+' H2_T0: with every provider credential absent, ThreatIntelBroker.enrich_ip
+' returned {status: missing_credential} for greynoise/virustotal/shodan
+' (fail-open, no exception), build_session_summary_payload still produced a
+' valid, deliverable embed, and CredentialCache.get() for the intel webhook
+' itself also correctly returned None -- delivery skipped with a logged
+' warning (credential_unavailable), never a crash. This is the same
+' fail-open contract test_h2_enrichment_pipeline.py already proved offline,
+' now independently reproduced on the deployed bytes.
+'
+' Flow 3 (immediate legacy alert, no broker edge) is independently confirmed
+' live: the real process's own ops log shows delivery_success entries for
+' the legacy channel both before and after H2_T0 (credential_available for
+' /patriotpot/2026-control/discord-webhook), continuing uninterrupted
+' through the H2 restart -- exactly the architectural independence this
+' flow exists to show.
+' =============================================================================
+
+title H2 Sequence Diagrams -- REVIEWED_CANDIDATE_PRE_DEPLOYMENT
+
+== Flow 1: Normal enriched session-summary delivery ==
+
+participant "Cowrie JSON log" as Log
+participant "discord-monitor.py\n(queue_line / flush_expired_clusters)" as Main
+participant "SessionClusterManager" as ClusterMgr
+participant "SessionCluster" as Cluster
+participant "ThreatIntelWorker" as Worker
+participant "ThreatIntelBroker" as Broker
+participant "EnrichmentCache" as Cache
+participant "GreyNoise / VirusTotal / Shodan" as Providers
+participant "build_session_summary_payload()" as Builder
+participant "Discord webhook\n(intel channel)" as Webhook
+
+Log -> Main : raw_line (cowrie.login.success)
+Main -> ClusterMgr : observe(event, now)
+ClusterMgr -> Cluster : record_event(event)
+Main -> ClusterMgr : flush_expired(now)
+ClusterMgr --> Main : [cluster] (window elapsed)
+Main -> Worker : try_submit(cluster)
+Worker --> Main : True (non-blocking, accepted)
+note right of Main
+  Ingestion (offset consumption) is never
+  blocked: try_submit() returns immediately
+  regardless of provider latency.
+end note
+
+group background thread
+  Worker -> Broker : enrich_ip(cluster.src_ip)
+  Broker -> Cache : get(cache_key)
+  Cache --> Broker : None (miss)
+  Broker -> Providers : lookup_ip(ip, api_key, timeout)  [x3, parallel]
+  Providers --> Broker : ProviderResponse(status=ok, normalized={...})
+  Broker -> Cache : set(cache_key, envelope, ttl)
+  Broker --> Worker : {greynoise: {...}, virustotal: {...}, shodan: {...}}
+end
+
+Main -> Worker : drain_completed()
+Worker --> Main : [(cluster, enrichment)]
+Main -> Builder : build_session_summary_payload(cluster, enrichment)
+Builder --> Main : Discord embed payload\n(base Cowrie fields + enrichment fields)
+Main -> Main : enqueue_pending(state, flush_id, payload, "intel")
+Main -> Webhook : POST payload (pending_intel drain)
+Webhook --> Main : 2xx
+
+== Flow 2: Provider failure / degraded -- summary still delivers ==
+
+Log -> Main : raw_line
+Main -> ClusterMgr : observe(event, now)
+Main -> ClusterMgr : flush_expired(now)
+ClusterMgr --> Main : [cluster]
+Main -> Worker : try_submit(cluster)
+
+group background thread
+  Worker -> Broker : enrich_ip(cluster.src_ip)
+  Broker -> Providers : lookup_ip(...)  [x3]
+  Providers --> Broker : timeout / 429 / 5xx / raised exception
+  note right of Broker
+    Fail-open by construction: any exception,
+    timeout, rate-limit, or server error
+    becomes a status envelope for that
+    provider alone. enrich_ip() never raises.
+  end note
+  Broker --> Worker : {greynoise: {status: "unavailable"/"timeout"/\n  "rate_limited"/"error"}, ...}
+end
+
+Main -> Worker : drain_completed()
+Worker --> Main : [(cluster, enrichment)]  ' enrichment may even be None\n  ' if the broker call itself raised
+Main -> Builder : build_session_summary_payload(cluster, enrichment)
+Builder --> Main : Discord embed payload\n(enrichment fields show the failure\n status string, base fields intact)
+Main -> Main : enqueue_pending(state, flush_id, payload, "intel")
+Main -> Webhook : POST payload (pending_intel drain)
+Webhook --> Main : 2xx
+
+note over Main, Webhook
+  CRITICAL INVARIANT: this POST happens regardless of which/how many
+  providers failed. worker=None, backlog-exhausted (try_submit -> False),
+  and an all-providers-exception flush all reach the same enqueue_pending
+  call -- see BaseAlertSurvivesEnrichmentFailureTests.
+end note
+
+== Flow 3: Immediate legacy alert -- ThreatIntelBroker never instantiated ==
+
+Log -> Main : raw_line (priority event,\ne.g. cowrie.login.success)
+Main -> ClusterMgr : observe(event, now)
+Main -> Main : format_alert(event)
+note right of Main
+  format_alert() reads ONLY the raw Cowrie
+  event dict. No SessionClusterManager
+  enrichment field, no ThreatIntelBroker
+  reference, no EnrichmentCache reference --
+  this call has no edge to any box in the
+  "threat_intel" package of the class
+  diagram at all.
+end note
+Main -> Main : enqueue_pending(state, item_id,\n  payload, "legacy")
+participant "Discord webhook\n(legacy channel)" as LegacyWebhook
+Main -> LegacyWebhook : POST payload (pending_legacy drain)
+LegacyWebhook --> Main : 2xx
+
+note over Main
+  This delivery path is architecturally
+  independent of enrichment success, failure,
+  latency, or even whether a
+  ThreatIntelBroker/Worker was ever
+  constructed for this process. It is not
+  merely decoupled in practice -- there is no
+  code path from queue_line()'s immediate-
+  alert branch that can reach the broker.
+end note
+
+@enduml
