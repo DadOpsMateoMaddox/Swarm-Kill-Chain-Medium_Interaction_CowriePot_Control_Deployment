@@ -69,6 +69,7 @@ class TransitioningDescriptorBuffer:
 class DiscordMonitorTests(unittest.TestCase):
     def setUp(self):
         self.credentials = mock.Mock()
+        self.intel_credentials = mock.Mock()
 
     def _clusters(self):
         return discord.SessionClusterManager(window_seconds=45.0)
@@ -80,7 +81,8 @@ class DiscordMonitorTests(unittest.TestCase):
         state = discord.default_state()
         status = SimpleNamespace(st_dev=1, st_ino=2, st_size=91)
         clusters = self._clusters()
-        governor = self._governor()
+        legacy_governor = self._governor()
+        intel_governor = self._governor()
 
         def fake_consume(path, state_arg, start, credentials, clusters_arg, governor_arg):
             state_arg["source"]["offset"] = 91
@@ -93,8 +95,10 @@ class DiscordMonitorTests(unittest.TestCase):
         ), mock.patch.object(
             discord, "consume", side_effect=fake_consume
         ) as consume:
-            discord.poll_once(state, self.credentials, clusters, governor, None)
-        consume.assert_called_once_with(discord.LOG_PATH, state, 0, self.credentials, clusters, governor)
+            discord.poll_once(
+                state, self.credentials, legacy_governor, self.intel_credentials, intel_governor, clusters, None
+            )
+        consume.assert_called_once_with(discord.LOG_PATH, state, 0, self.credentials, clusters, legacy_governor)
         self.assertEqual(state["source"]["offset"], 91)
         save.assert_called_once()
 
@@ -103,14 +107,17 @@ class DiscordMonitorTests(unittest.TestCase):
         state["source"] = {"device": 1, "inode": 2, "offset": 40}
         status = SimpleNamespace(st_dev=1, st_ino=2, st_size=80)
         clusters = self._clusters()
-        governor = self._governor()
+        legacy_governor = self._governor()
+        intel_governor = self._governor()
         with mock.patch.object(discord, "regular_stat", return_value=status), mock.patch.object(
             discord, "consume", return_value=80
         ) as consume, mock.patch.object(discord, "drain_pending"), mock.patch.object(
             discord, "flush_expired_clusters"
         ):
-            discord.poll_once(state, self.credentials, clusters, governor, None)
-        consume.assert_called_once_with(discord.LOG_PATH, state, 40, self.credentials, clusters, governor)
+            discord.poll_once(
+                state, self.credentials, legacy_governor, self.intel_credentials, intel_governor, clusters, None
+            )
+        consume.assert_called_once_with(discord.LOG_PATH, state, 40, self.credentials, clusters, legacy_governor)
 
     def test_rename_rotation_drains_old_inode_then_new(self):
         state = discord.default_state()
@@ -118,16 +125,22 @@ class DiscordMonitorTests(unittest.TestCase):
         status = SimpleNamespace(st_dev=1, st_ino=3, st_size=20)
         old_path = Path("cowrie.json.1")
         clusters = self._clusters()
-        governor = self._governor()
+        legacy_governor = self._governor()
+        intel_governor = self._governor()
         with mock.patch.object(discord, "regular_stat", return_value=status), mock.patch.object(
             discord, "locate_inode", return_value=old_path
         ), mock.patch.object(discord, "consume", side_effect=[45, 20]) as consume, mock.patch.object(
             discord, "save_state"
         ), mock.patch.object(discord, "drain_pending"), mock.patch.object(discord, "flush_expired_clusters"):
-            discord.poll_once(state, self.credentials, clusters, governor, None)
-        self.assertEqual(consume.call_args_list[0], mock.call(old_path, state, 40, self.credentials, clusters, governor))
+            discord.poll_once(
+                state, self.credentials, legacy_governor, self.intel_credentials, intel_governor, clusters, None
+            )
         self.assertEqual(
-            consume.call_args_list[1], mock.call(discord.LOG_PATH, state, 0, self.credentials, clusters, governor)
+            consume.call_args_list[0], mock.call(old_path, state, 40, self.credentials, clusters, legacy_governor)
+        )
+        self.assertEqual(
+            consume.call_args_list[1],
+            mock.call(discord.LOG_PATH, state, 0, self.credentials, clusters, legacy_governor),
         )
 
     def test_copytruncate_resets_offset(self):
@@ -135,14 +148,17 @@ class DiscordMonitorTests(unittest.TestCase):
         state["source"] = {"device": 1, "inode": 2, "offset": 40}
         status = SimpleNamespace(st_dev=1, st_ino=2, st_size=10)
         clusters = self._clusters()
-        governor = self._governor()
+        legacy_governor = self._governor()
+        intel_governor = self._governor()
         with mock.patch.object(discord, "regular_stat", return_value=status), mock.patch.object(
             discord, "consume", return_value=10
         ) as consume, mock.patch.object(discord, "save_state"), mock.patch.object(
             discord, "drain_pending"
         ), mock.patch.object(discord, "flush_expired_clusters"):
-            discord.poll_once(state, self.credentials, clusters, governor, None)
-        consume.assert_called_once_with(discord.LOG_PATH, state, 0, self.credentials, clusters, governor)
+            discord.poll_once(
+                state, self.credentials, legacy_governor, self.intel_credentials, intel_governor, clusters, None
+            )
+        consume.assert_called_once_with(discord.LOG_PATH, state, 0, self.credentials, clusters, legacy_governor)
 
     def test_partial_line_is_not_consumed(self):
         state = discord.default_state()
@@ -165,7 +181,8 @@ class DiscordMonitorTests(unittest.TestCase):
         line = b'{"eventid":"cowrie.session.connect","src_ip":"198.51.100.7","session":"s1"}\n'
         discord.queue_line(state, line, clusters)
         discord.queue_line(state, line, clusters)
-        self.assertEqual(state["pending"], [])
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertEqual(state["pending_intel"], [])
         self.assertEqual(len(state["seen"]), 1)
         self.assertEqual(clusters.active_count(), 1)
 
@@ -180,7 +197,8 @@ class DiscordMonitorTests(unittest.TestCase):
         # No per-event Discord payload is queued; the event is absorbed into
         # the session cluster instead, to be summarized once the cluster
         # flushes. This is the core anti-flood behavior H2 exists to add.
-        self.assertEqual(state["pending"], [])
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertEqual(state["pending_intel"], [])
         _key, cluster, _is_new = clusters.observe(
             {"eventid": "cowrie.session.closed", "src_ip": "198.51.100.7", "session": "s1"}, now=0.0
         )
@@ -189,14 +207,14 @@ class DiscordMonitorTests(unittest.TestCase):
     def test_pending_item_delivered_and_marked_seen(self):
         state = discord.default_state()
         item_id = hashlib.sha256(b"summary-1").hexdigest()
-        state["pending"].append({"id": item_id, "payload": {"content": "summary"}})
+        state["pending_legacy"].append({"id": item_id, "payload": {"content": "summary"}})
         self.credentials.get.return_value = "unused-test-url"
         governor = self._governor()
         with mock.patch.object(discord, "post_payload", return_value=(True, 200, None)), mock.patch.object(
             discord, "save_state"
         ):
-            discord.drain_pending(state, self.credentials, governor)
-        self.assertEqual(state["pending"], [])
+            discord.drain_pending(state, self.credentials, governor, "legacy")
+        self.assertEqual(state["pending_legacy"], [])
         self.assertEqual(state["seen"], [item_id])
 
     def test_restart_pending_is_suppressed_without_replay(self):
@@ -215,12 +233,79 @@ class DiscordMonitorTests(unittest.TestCase):
         )
         with mock.patch.object(discord, "STATE_PATH", state_path):
             state = discord.load_state()
-        self.assertEqual(state["pending"], [])
+        self.assertEqual(state["version"], 4)
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertEqual(state["pending_intel"], [])
         self.assertEqual(state["replay_suppressed"], 1)
         self.assertEqual(
             state["dead_letters"],
             [{"id": "a" * 64, "reason": "restart_replay_suppressed"}],
         )
+
+    def test_v3_state_migrates_single_pending_list_into_legacy_channel(self):
+        """v3 -> v4 migration: the pre-split single `pending` list is folded
+        into pending_legacy (never silently dropped, never guessed as
+        intel), and the new pending_intel key exists, empty, from the start."""
+        state_path = mock.Mock()
+        state_path.read_text.return_value = json.dumps(
+            {
+                "version": 3,
+                "source": {"device": 1, "inode": 2, "offset": 20},
+                "seen": [],
+                "pending": [{"id": "b" * 64, "payload": {"content": "ignored"}}],
+                "dead_letters": [],
+                "replay_suppressed": 0,
+                "initialized_at": None,
+                "updated_at": None,
+                "clusters": {},
+                "flushed_awaiting_enrichment": {},
+            }
+        )
+        with mock.patch.object(discord, "STATE_PATH", state_path):
+            state = discord.load_state()
+        self.assertEqual(state["version"], 4)
+        self.assertNotIn("pending", state)
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertEqual(state["pending_intel"], [])
+        self.assertEqual(state["replay_suppressed"], 1)
+        self.assertEqual(
+            state["dead_letters"],
+            [{"id": "b" * 64, "reason": "restart_replay_suppressed"}],
+        )
+
+    def test_crash_restart_with_both_pending_queues_populated_suppresses_both_independently(self):
+        """Dual-queue crash/restart: a v4 state file with items in BOTH
+        pending_legacy and pending_intel at the moment of a crash must have
+        both queues independently suppressed (never replayed, never cross-
+        contaminated) on the next load."""
+        legacy_id = "c" * 64
+        intel_id = "d" * 64
+        state_path = mock.Mock()
+        state_path.read_text.return_value = json.dumps(
+            {
+                "version": 4,
+                "source": {"device": 1, "inode": 2, "offset": 20},
+                "seen": [],
+                "pending_legacy": [{"id": legacy_id, "payload": {"content": "raw alert"}}],
+                "pending_intel": [{"id": intel_id, "payload": {"content": "summary"}}],
+                "dead_letters": [],
+                "replay_suppressed": 0,
+                "initialized_at": None,
+                "updated_at": None,
+                "clusters": {},
+                "flushed_awaiting_enrichment": {},
+            }
+        )
+        with mock.patch.object(discord, "STATE_PATH", state_path):
+            state = discord.load_state()
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertEqual(state["pending_intel"], [])
+        self.assertEqual(state["replay_suppressed"], 2)
+        reasons_by_id = {entry["id"]: entry["reason"] for entry in state["dead_letters"]}
+        self.assertEqual(reasons_by_id[legacy_id], "restart_replay_suppressed")
+        self.assertEqual(reasons_by_id[intel_id], "restart_replay_suppressed")
+        self.assertIn(legacy_id, state["seen"])
+        self.assertIn(intel_id, state["seen"])
 
     def test_post_is_single_attempt_to_prevent_replay(self):
         with mock.patch.object(
@@ -260,6 +345,8 @@ class DiscordH2IntegrationTests(unittest.TestCase):
     def setUp(self):
         self.credentials = mock.Mock()
         self.credentials.get.return_value = "unused-test-url"
+        self.intel_credentials = mock.Mock()
+        self.intel_credentials.get.return_value = "unused-intel-test-url"
 
     def test_post_payload_always_sets_allowed_mentions_parse_empty(self):
         """Attacker/provider text landing in an embed must never be able to
@@ -276,8 +363,9 @@ class DiscordH2IntegrationTests(unittest.TestCase):
 
     def test_pending_stays_bounded_during_prolonged_degraded_period(self):
         """Even while Discord is 429-ing (governor degraded, nothing draining),
-        `pending` must not grow without bound -- the existing MAX_PENDING
-        eviction (queue_limit dead-letter) must keep working."""
+        pending_intel must not grow without bound -- the existing MAX_PENDING
+        eviction (queue_limit dead-letter) must keep working. Cluster flushes
+        (session summaries) are intel-channel content."""
         state = discord.default_state()
         clusters = discord.SessionClusterManager(window_seconds=-1.0, max_active_clusters=100000)
         governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
@@ -291,41 +379,42 @@ class DiscordH2IntegrationTests(unittest.TestCase):
                 )
         with mock.patch.object(discord, "save_state"), mock.patch.object(discord.time, "time", return_value=100.0):
             discord.flush_expired_clusters(state, clusters, worker=None)
-            discord.drain_pending(state, self.credentials, governor)  # degraded: must not send, must not grow
+            discord.drain_pending(state, self.intel_credentials, governor, "intel")  # degraded: must not send, must not grow
 
-        self.assertLessEqual(len(state["pending"]), discord.MAX_PENDING)
+        self.assertLessEqual(len(state["pending_intel"]), discord.MAX_PENDING)
+        self.assertEqual(state["pending_legacy"], [])
 
     def test_429_leaves_item_pending_not_dead_lettered(self):
         state = discord.default_state()
         item_id = hashlib.sha256(b"summary-1").hexdigest()
-        state["pending"].append({"id": item_id, "payload": {"content": "summary"}})
+        state["pending_legacy"].append({"id": item_id, "payload": {"content": "summary"}})
         governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
         with mock.patch.object(discord, "post_payload", return_value=(False, 429, 30.0)), mock.patch.object(
             discord, "save_state"
         ):
-            discord.drain_pending(state, self.credentials, governor)
-        self.assertEqual(len(state["pending"]), 1)
-        self.assertEqual(state["pending"][0]["id"], item_id)
+            discord.drain_pending(state, self.credentials, governor, "legacy")
+        self.assertEqual(len(state["pending_legacy"]), 1)
+        self.assertEqual(state["pending_legacy"][0]["id"], item_id)
         self.assertEqual(state["dead_letters"], [])
         self.assertTrue(governor.degraded)
 
     def test_degraded_mode_blocks_further_sends_without_dead_lettering(self):
         state = discord.default_state()
-        state["pending"] = [
+        state["pending_legacy"] = [
             {"id": hashlib.sha256(b"a").hexdigest(), "payload": {}},
             {"id": hashlib.sha256(b"b").hexdigest(), "payload": {}},
         ]
         governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
         governor.note_rate_limited(retry_after_seconds=30.0)
         with mock.patch.object(discord, "post_payload") as post, mock.patch.object(discord, "save_state"):
-            discord.drain_pending(state, self.credentials, governor)
+            discord.drain_pending(state, self.credentials, governor, "legacy")
         post.assert_not_called()
-        self.assertEqual(len(state["pending"]), 2)
+        self.assertEqual(len(state["pending_legacy"]), 2)
         self.assertEqual(state["dead_letters"], [])
 
     def test_recovery_sends_one_digest_not_a_replay_storm(self):
         state = discord.default_state()
-        state["pending"] = [{"id": hashlib.sha256(b"summary").hexdigest(), "payload": {"content": "s"}}]
+        state["pending_intel"] = [{"id": hashlib.sha256(b"summary").hexdigest(), "payload": {"content": "s"}}]
         governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
         governor.note_rate_limited(retry_after_seconds=30.0)
         governor.note_blocked(queue_depth=50)
@@ -336,13 +425,188 @@ class DiscordH2IntegrationTests(unittest.TestCase):
         with mock.patch.object(discord, "post_payload", return_value=(True, 200, None)) as post, mock.patch.object(
             discord, "save_state"
         ):
-            discord.drain_pending(state, self.credentials, governor)
+            discord.drain_pending(state, self.intel_credentials, governor, "intel")
         # One delivery for the queued summary, one for the recovery digest --
         # never one message per suppressed item.
         self.assertEqual(post.call_count, 2)
         digest_call_payload = post.call_args_list[1][0][1]
         self.assertIn("recovered", digest_call_payload["embeds"][0]["title"].lower())
         self.assertFalse(governor.degraded)
+
+    def test_legacy_and_intel_routing_is_independent(self):
+        """Routing correctness: an immediate priority alert (legacy-channel
+        content) and a flushed cluster summary (intel-channel content) must
+        land in their own queues, never the other's, within the same state."""
+        state = discord.default_state()
+        clusters = discord.SessionClusterManager(window_seconds=-1.0)
+        with mock.patch.object(discord, "IMMEDIATE_ALERTS_ENABLED", True), mock.patch.object(
+            discord.time, "time", return_value=0.0
+        ):
+            discord.queue_line(
+                state,
+                b'{"eventid":"cowrie.login.success","username":"root","password":"toor",'
+                b'"src_ip":"198.51.100.7","session":"s1"}\n',
+                clusters,
+            )
+        self.assertEqual(len(state["pending_legacy"]), 1)
+        self.assertEqual(state["pending_intel"], [])
+
+        with mock.patch.object(discord, "save_state"), mock.patch.object(discord.time, "time", return_value=100.0):
+            discord.flush_expired_clusters(state, clusters, worker=None)
+        # The immediate alert is still the only legacy item; the flush added
+        # exactly one intel item and did not touch pending_legacy.
+        self.assertEqual(len(state["pending_legacy"]), 1)
+        self.assertEqual(len(state["pending_intel"]), 1)
+        self.assertIn("LOGIN", state["pending_legacy"][0]["payload"]["embeds"][0]["title"])
+        self.assertIn("ATTACK SESSION SUMMARY", state["pending_intel"][0]["payload"]["embeds"][0]["title"])
+
+    def test_legacy_queue_saturation_does_not_affect_intel_queue(self):
+        """Independent queue saturation: filling pending_legacy to its bound
+        (and dead-lettering the overflow) must not touch pending_intel."""
+        state = discord.default_state()
+        for i in range(discord.MAX_PENDING + 10):
+            discord.enqueue_pending(state, f"legacy-{i}", {"content": str(i)}, "legacy")
+        self.assertEqual(len(state["pending_legacy"]), discord.MAX_PENDING)
+        self.assertEqual(state["pending_intel"], [])
+        self.assertEqual(len(state["dead_letters"]), 10)
+        self.assertTrue(all(entry["reason"] == "queue_limit" for entry in state["dead_letters"]))
+
+        discord.enqueue_pending(state, "intel-1", {"content": "summary"}, "intel")
+        self.assertEqual(len(state["pending_intel"]), 1)
+        self.assertEqual(len(state["pending_legacy"]), discord.MAX_PENDING)
+
+    def test_intel_channel_429_independent_of_legacy_channel(self):
+        """Independent 429/backoff: rate-limiting the intel channel's
+        governor must not degrade or block the legacy channel's delivery."""
+        state = discord.default_state()
+        legacy_id = hashlib.sha256(b"legacy-item").hexdigest()
+        intel_id = hashlib.sha256(b"intel-item").hexdigest()
+        state["pending_legacy"].append({"id": legacy_id, "payload": {"content": "raw"}})
+        state["pending_intel"].append({"id": intel_id, "payload": {"content": "summary"}})
+        legacy_governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+        intel_governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+        intel_governor.note_rate_limited(retry_after_seconds=99999.0)
+
+        def fake_post(url, payload):
+            self.assertEqual(url, "unused-test-url")  # only legacy should ever call post
+            return True, 200, None
+
+        with mock.patch.object(discord, "post_payload", side_effect=fake_post) as post, mock.patch.object(
+            discord, "save_state"
+        ):
+            discord.drain_pending(state, self.intel_credentials, intel_governor, "intel")
+            discord.drain_pending(state, self.credentials, legacy_governor, "legacy")
+
+        self.assertEqual(post.call_count, 1)  # only the legacy delivery happened
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertEqual(len(state["pending_intel"]), 1)
+        self.assertEqual(state["pending_intel"][0]["id"], intel_id)
+        self.assertTrue(intel_governor.degraded)
+        self.assertFalse(legacy_governor.degraded)
+
+    def test_missing_intel_credential_dead_letters_intel_without_affecting_legacy(self):
+        state = discord.default_state()
+        legacy_id = hashlib.sha256(b"legacy-item").hexdigest()
+        intel_id = hashlib.sha256(b"intel-item").hexdigest()
+        state["pending_legacy"].append({"id": legacy_id, "payload": {"content": "raw"}})
+        state["pending_intel"].append({"id": intel_id, "payload": {"content": "summary"}})
+        missing_intel_credentials = mock.Mock()
+        missing_intel_credentials.get.return_value = None
+        legacy_governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+        intel_governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+
+        with mock.patch.object(discord, "post_payload", return_value=(True, 200, None)) as post, mock.patch.object(
+            discord, "save_state"
+        ):
+            discord.drain_pending(state, missing_intel_credentials, intel_governor, "intel")
+            discord.drain_pending(state, self.credentials, legacy_governor, "legacy")
+
+        self.assertEqual(post.call_count, 1)  # only legacy actually posted
+        self.assertEqual(state["pending_intel"], [])
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertEqual(len(state["dead_letters"]), 1)
+        self.assertEqual(state["dead_letters"][0]["id"], intel_id)
+        self.assertEqual(state["dead_letters"][0]["reason"], "credential_unavailable")
+
+    def test_intel_delivery_failure_does_not_block_legacy_delivery(self):
+        state = discord.default_state()
+        legacy_id = hashlib.sha256(b"legacy-ok").hexdigest()
+        intel_id = hashlib.sha256(b"intel-fail").hexdigest()
+        state["pending_legacy"].append({"id": legacy_id, "payload": {"content": "raw"}})
+        state["pending_intel"].append({"id": intel_id, "payload": {"content": "summary"}})
+        legacy_governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+        intel_governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+
+        def fake_post(url, payload):
+            if url == "unused-intel-test-url":
+                return False, 500, None  # non-429 delivery failure: dead-letter, no replay
+            return True, 200, None
+
+        with mock.patch.object(discord, "post_payload", side_effect=fake_post), mock.patch.object(
+            discord, "save_state"
+        ):
+            discord.drain_pending(state, self.intel_credentials, intel_governor, "intel")
+            discord.drain_pending(state, self.credentials, legacy_governor, "legacy")
+
+        self.assertEqual(state["pending_intel"], [])
+        self.assertEqual(state["dead_letters"], [{"id": intel_id, "reason": "delivery_uncertain_no_replay"}])
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertIn(legacy_id, state["seen"])
+
+    def test_legacy_delivery_failure_does_not_block_intel_delivery(self):
+        state = discord.default_state()
+        legacy_id = hashlib.sha256(b"legacy-fail").hexdigest()
+        intel_id = hashlib.sha256(b"intel-ok").hexdigest()
+        state["pending_legacy"].append({"id": legacy_id, "payload": {"content": "raw"}})
+        state["pending_intel"].append({"id": intel_id, "payload": {"content": "summary"}})
+        legacy_governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+        intel_governor = discord.DiscordRateGovernor(clock=lambda: 0.0)
+
+        def fake_post(url, payload):
+            if url == "unused-test-url":
+                return False, 500, None
+            return True, 200, None
+
+        with mock.patch.object(discord, "post_payload", side_effect=fake_post), mock.patch.object(
+            discord, "save_state"
+        ):
+            discord.drain_pending(state, self.credentials, legacy_governor, "legacy")
+            discord.drain_pending(state, self.intel_credentials, intel_governor, "intel")
+
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertEqual(state["dead_letters"], [{"id": legacy_id, "reason": "delivery_uncertain_no_replay"}])
+        self.assertEqual(state["pending_intel"], [])
+        self.assertIn(intel_id, state["seen"])
+
+    def test_partial_provider_failure_summary_still_routes_to_intel_channel(self):
+        state = discord.default_state()
+        cluster = discord.SessionCluster(key="session:s1", src_ip="198.51.100.7", session_id="s1", created_at=0.0)
+        cluster.raw_event_count = 1
+        enrichment = {
+            "greynoise": {
+                "status": "ok",
+                "normalized": {"classification": "malicious", "actor": "unknown", "tags": []},
+            },
+            "virustotal": None,
+            "shodan": {"status": "error"},
+        }
+        flush_id = discord._flush_item_id(cluster)
+        discord._enqueue_summary(state, cluster, enrichment, flush_id)
+        self.assertEqual(len(state["pending_intel"]), 1)
+        self.assertEqual(state["pending_legacy"], [])
+        fields = state["pending_intel"][0]["payload"]["embeds"][0]["fields"]
+        values_by_name = {f["name"]: f["value"] for f in fields}
+        self.assertIn("Classification", values_by_name["GreyNoise"])
+        self.assertEqual(values_by_name["VirusTotal"], "unavailable")
+        self.assertEqual(values_by_name["Shodan"], "error")
+
+    def test_discord_monitor_source_has_no_s3_or_archive_dependency(self):
+        """H2's enriched presentation layer must stay entirely independent
+        of the S3 archival path -- Discord delivery outcomes (success,
+        429, missing credential) must never gate or touch archival."""
+        source = (ROOT / "native" / "discord-monitor.py").read_text(encoding="utf-8")
+        for forbidden in ("boto3", "s3-archive", "s3_archive", "import archive"):
+            self.assertNotIn(forbidden, source.lower())
 
     def test_priority_event_immediate_alert_when_enabled(self):
         state = discord.default_state()
@@ -353,8 +617,9 @@ class DiscordH2IntegrationTests(unittest.TestCase):
         )
         with mock.patch.object(discord, "IMMEDIATE_ALERTS_ENABLED", True):
             discord.queue_line(state, line, clusters)
-        self.assertEqual(len(state["pending"]), 1)
-        self.assertIn("LOGIN", state["pending"][0]["payload"]["embeds"][0]["title"])
+        self.assertEqual(len(state["pending_legacy"]), 1)
+        self.assertEqual(state["pending_intel"], [])
+        self.assertIn("LOGIN", state["pending_legacy"][0]["payload"]["embeds"][0]["title"])
 
     def test_priority_event_immediate_alert_not_duplicated(self):
         state = discord.default_state()
@@ -372,7 +637,7 @@ class DiscordH2IntegrationTests(unittest.TestCase):
             discord.queue_line(state, other_line, clusters)
         # Same session, same priority event *kind* -> only the first one
         # produces an immediate alert.
-        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(len(state["pending_legacy"]), 1)
 
     def test_no_immediate_alert_when_disabled_by_default(self):
         state = discord.default_state()
@@ -383,7 +648,8 @@ class DiscordH2IntegrationTests(unittest.TestCase):
         )
         self.assertFalse(discord.IMMEDIATE_ALERTS_ENABLED)
         discord.queue_line(state, line, clusters)
-        self.assertEqual(state["pending"], [])
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertEqual(state["pending_intel"], [])
 
     def test_many_raw_events_produce_one_flushed_summary_not_a_storm(self):
         state = discord.default_state()
@@ -401,13 +667,16 @@ class DiscordH2IntegrationTests(unittest.TestCase):
         with mock.patch.object(discord.time, "time", return_value=0.0):
             for line in events:
                 discord.queue_line(state, line, clusters)
-        self.assertEqual(state["pending"], [])  # nothing sent yet: cluster still open
+        # nothing sent yet on either channel: cluster still open
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertEqual(state["pending_intel"], [])
         with mock.patch.object(discord, "save_state"), mock.patch.object(
             discord.time, "time", return_value=10_000.0
         ):
             discord.flush_expired_clusters(state, clusters, worker=None)
-        self.assertEqual(len(state["pending"]), 1)
-        embed = state["pending"][0]["payload"]["embeds"][0]
+        self.assertEqual(len(state["pending_intel"]), 1)
+        self.assertEqual(state["pending_legacy"], [])
+        embed = state["pending_intel"][0]["payload"]["embeds"][0]
         self.assertIn("ATTACK SESSION SUMMARY", embed["title"])
 
     def test_flush_expired_clusters_fail_open_with_no_worker_configured(self):
@@ -416,7 +685,7 @@ class DiscordH2IntegrationTests(unittest.TestCase):
         clusters.observe({"eventid": "cowrie.session.connect", "src_ip": "198.51.100.7", "session": "s1"}, now=0.0)
         with mock.patch.object(discord, "save_state"):
             discord.flush_expired_clusters(state, clusters, worker=None)
-        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(len(state["pending_intel"]), 1)
         self.assertEqual(state["flushed_awaiting_enrichment"], {})
 
     def test_flush_expired_clusters_fail_open_when_worker_backlog_full(self):
@@ -428,7 +697,7 @@ class DiscordH2IntegrationTests(unittest.TestCase):
         worker.drain_completed.return_value = []
         with mock.patch.object(discord, "save_state"):
             discord.flush_expired_clusters(state, clusters, worker)
-        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(len(state["pending_intel"]), 1)
         self.assertEqual(state["flushed_awaiting_enrichment"], {})
 
     def test_restart_safe_state_no_replay_after_load(self):
@@ -505,7 +774,8 @@ class DiscordH2IntegrationTests(unittest.TestCase):
         # "Crash": nothing was flushed yet. state["clusters"] is the only
         # record of this session; the in-memory `clusters` manager is
         # discarded, simulating process death.
-        self.assertEqual(state["pending"], [])
+        self.assertEqual(state["pending_legacy"], [])
+        self.assertEqual(state["pending_intel"], [])
         self.assertNotEqual(state["clusters"], {})
 
         # "Restart": a fresh manager restored purely from persisted state.
@@ -515,8 +785,8 @@ class DiscordH2IntegrationTests(unittest.TestCase):
 
         with mock.patch.object(discord, "save_state"), mock.patch.object(discord.time, "time", return_value=1000.0):
             discord.flush_expired_clusters(state, restarted_clusters, worker=None)
-        self.assertEqual(len(state["pending"]), 1)
-        embed = state["pending"][0]["payload"]["embeds"][0]
+        self.assertEqual(len(state["pending_intel"]), 1)
+        embed = state["pending_intel"][0]["payload"]["embeds"][0]
         self.assertIn("Successful login", embed["fields"][0]["value"])
 
     def test_crash_during_enrichment_window_recovered_at_startup(self):
@@ -531,7 +801,7 @@ class DiscordH2IntegrationTests(unittest.TestCase):
         # move the just-built pending summary back out and reconstruct the
         # awaiting-enrichment entry that would exist at that exact moment.
         flushed_entry = next(iter(state["flushed_awaiting_enrichment"].values()), None)
-        state["pending"] = []
+        state["pending_intel"] = []
         if flushed_entry is None:
             cluster = discord.SessionCluster(key="session:s1", src_ip="198.51.100.7", session_id="s1", created_at=0.0)
             cluster.commands = ["id"]
@@ -540,7 +810,8 @@ class DiscordH2IntegrationTests(unittest.TestCase):
 
         with mock.patch.object(discord, "save_state"):
             discord._recover_flushed_awaiting_enrichment(state)
-        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(len(state["pending_intel"]), 1)
+        self.assertEqual(state["pending_legacy"], [])
         self.assertEqual(state["flushed_awaiting_enrichment"], {})
 
     def test_recovered_summary_is_not_replayed_a_second_time(self):
@@ -554,15 +825,17 @@ class DiscordH2IntegrationTests(unittest.TestCase):
         state["flushed_awaiting_enrichment"] = {"deadbeef": cluster.to_dict()}
         with mock.patch.object(discord, "save_state"):
             discord._recover_flushed_awaiting_enrichment(state)
-        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(len(state["pending_intel"]), 1)
 
         # Second "restart": load_state()'s own pending-suppression logic
-        # (unchanged by H2) must dead-letter it, not resend it.
+        # (unchanged by H2, now applied per-channel) must dead-letter it,
+        # not resend it.
         state_path = mock.Mock()
         state_path.read_text.return_value = json.dumps(state)
         with mock.patch.object(discord, "STATE_PATH", state_path):
             reloaded = discord.load_state()
-        self.assertEqual(reloaded["pending"], [])
+        self.assertEqual(reloaded["pending_intel"], [])
+        self.assertEqual(reloaded["pending_legacy"], [])
         self.assertEqual(reloaded["replay_suppressed"], 1)
         self.assertEqual(reloaded["dead_letters"][0]["reason"], "restart_replay_suppressed")
 
@@ -577,7 +850,7 @@ class DiscordH2IntegrationTests(unittest.TestCase):
         # be evicted and flushed (as a pending summary), not silently lost.
         with mock.patch.object(discord, "save_state"), mock.patch.object(discord.time, "time", return_value=2.0):
             discord.flush_expired_clusters(state, clusters, worker=None)
-        self.assertEqual(len(state["pending"]), 1)
+        self.assertEqual(len(state["pending_intel"]), 1)
         self.assertEqual(clusters.active_count(), 2)
 
     def test_offset_consumption_proceeds_while_enrichment_is_slow_and_in_flight(self):

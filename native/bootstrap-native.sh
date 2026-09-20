@@ -38,7 +38,7 @@ trap 'record_failure_phase $?' EXIT
 read -r -d '' ASSET_HASHES <<'EOF' || true
 65ba7f77c4fa17e77f7fee3ad0510b510f862b88e46f53a6b266c23dfb7afb3a  archive-requirements.lock
 4dcc0dfe4b652ab4647f6d2fe992de0bebaedbd09f64dbe284b157545fb232b5  cowrie-requirements.lock
-6c4e7bc3e4516d4df828e37d4abee579b2082648857312be883a4bbb1aebb79c  discord-monitor.py
+c987b11da4f6156f687abcb5f3d0dc43b918dfccde4fa8204b488cb9a46429f7  discord-monitor.py
 1b8089d405e1766e3e1182c1d26cd0de66d35bd0205965b62979b9699a2d2b54  s3-archive.py
 ee2d62fe0cc0ed88d6180b30c5cf19611d481432aea058977ea88fe07ee918b9  install-host-key.py
 77057b6c86189dcc153ddfeb50c00e6fd3165711e7a6ddff121241a73c6fb7de  cowrie.service
@@ -77,6 +77,7 @@ required_environment=(
   COWRIE_HOST_KEY_SECRET
   COWRIE_HOST_KEY_VERSION_ID
   DISCORD_PARAMETER_NAME
+  DISCORD_INTEL_PARAMETER_NAME
   EVIDENCE_BUCKET
   EVIDENCE_PREFIX
   AWS_PROFILE
@@ -106,6 +107,10 @@ if [[ ! "$EVIDENCE_PREFIX" =~ ^control/[a-z0-9-]+/sensors/control-0$ ]]; then
 fi
 if [[ ! "$DISCORD_PARAMETER_NAME" =~ ^/[A-Za-z0-9_.:/-]+$ ]]; then
   echo "bootstrap error: invalid Discord parameter name" >&2
+  exit 1
+fi
+if [[ ! "$DISCORD_INTEL_PARAMETER_NAME" =~ ^/[A-Za-z0-9_.:/-]+$ ]]; then
+  echo "bootstrap error: invalid Discord intel parameter name" >&2
   exit 1
 fi
 
@@ -394,6 +399,7 @@ AWS_CONFIG_FILE=/etc/aws/config
 AWS_PROFILE=$AWS_PROFILE
 AWS_REGION=$AWS_REGION
 DISCORD_PARAMETER_NAME=$DISCORD_PARAMETER_NAME
+DISCORD_INTEL_PARAMETER_NAME=$DISCORD_INTEL_PARAMETER_NAME
 COWRIE_JSON_PATH=/opt/cowrie/var/log/cowrie/cowrie.json
 DISCORD_STATE_PATH=/var/lib/patriotpot-discord/state.json
 DISCORD_OPS_LOG=/var/log/patriotpot/discord.log

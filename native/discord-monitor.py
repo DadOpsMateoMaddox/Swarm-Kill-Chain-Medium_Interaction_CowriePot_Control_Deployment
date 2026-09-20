@@ -6,6 +6,20 @@ outbound rate governor as a presentation layer on top of the same
 byte-offset file tailing and restart-safe dedupe this module already had.
 That underlying tailing/dedupe/rotation logic is untouched from the H1-fixed
 version; only "what payload gets built and when" changed.
+
+Two independent Discord delivery channels, added after the initial H2 pass:
+  legacy -- raw per-event notifications (unchanged webhook, unchanged
+            payload shape), used for the startup ping and the optional
+            immediate priority alert.
+  intel  -- H2's clustered/enriched session summaries (GreyNoise + VirusTotal
+            + Shodan rendered together), a separate webhook.
+Each channel has its own credential cache, its own pending queue, and its
+own rate governor, so an outage or rate-limit on one channel can never stall
+delivery on the other. Note precisely what this does and does not reduce:
+if every cowrie.login.success still triggers a legacy alert, H2 does not cut
+total Discord webhook volume for that source -- it adds a second, bounded,
+enriched operator-facing stream alongside the existing raw one. Canonical
+evidence remains Cowrie's raw JSON plus the S3 archive, never Discord.
 """
 
 import hashlib
@@ -49,6 +63,12 @@ OPS_LOG = Path(os.environ.get("DISCORD_OPS_LOG", "/var/log/patriotpot/discord.lo
 PARAMETER_NAME = os.environ.get(
     "DISCORD_PARAMETER_NAME", "/patriotpot/2026-control/discord-webhook"
 )
+# H2 webhook separation: a second, independent SSM SecureString for the
+# clustered/enriched intelligence summaries. Never shares a credential
+# cache, queue, or governor with the legacy webhook above.
+DISCORD_INTEL_PARAMETER_NAME = os.environ.get(
+    "DISCORD_INTEL_PARAMETER_NAME", "/patriotpot/2026-control/discord-intel-webhook"
+)
 AWS_PROFILE = os.environ.get("AWS_PROFILE", "patriotpot")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 POLL_SECONDS = float(os.environ.get("DISCORD_POLL_SECONDS", "5"))
@@ -87,7 +107,8 @@ SHODAN_PARAMETER_NAME = os.environ.get(
     "SHODAN_PARAMETER_NAME", "/patriotpot/2026-control/shodan-api-key"
 )
 
-# H2: outbound rate governor.
+# H2: outbound rate governor. Each channel gets its own instance at the same
+# default pacing.
 DISCORD_MIN_INTERVAL_SECONDS = float(os.environ.get("DISCORD_MIN_INTERVAL_SECONDS", "1"))
 
 
@@ -125,10 +146,14 @@ def require_read_only_source() -> None:
 
 def default_state() -> Dict[str, object]:
     return {
-        "version": 3,
+        "version": 4,
         "source": None,
         "seen": [],
-        "pending": [],
+        # Two independent queues: legacy raw notifications vs. H2 enriched
+        # summaries. Kept separate so a stall on one channel's webhook can
+        # never block delivery on the other.
+        "pending_legacy": [],
+        "pending_intel": [],
         "dead_letters": [],
         "replay_suppressed": 0,
         "initialized_at": None,
@@ -150,11 +175,19 @@ def default_state() -> Dict[str, object]:
 def load_state() -> Dict[str, object]:
     try:
         data = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or data.get("version") not in (1, 2, 3):
+        if not isinstance(data, dict) or data.get("version") not in (1, 2, 3, 4):
             raise ValueError("unsupported state format")
-        for key in ("seen", "pending", "dead_letters"):
+        for key in ("seen", "dead_letters"):
             if not isinstance(data.get(key), list):
                 raise ValueError(f"invalid {key}")
+        if data.get("version") in (1, 2, 3):
+            if not isinstance(data.get("pending"), list):
+                raise ValueError("invalid pending")
+        else:
+            for key in ("pending_legacy", "pending_intel"):
+                if not isinstance(data.get(key), list):
+                    raise ValueError(f"invalid {key}")
+
         if data.get("version") == 1:
             data["version"] = 2
             data.setdefault("replay_suppressed", 0)
@@ -167,24 +200,33 @@ def load_state() -> Dict[str, object]:
             data["clusters"] = {}
         if not isinstance(data.get("flushed_awaiting_enrichment"), dict):
             data["flushed_awaiting_enrichment"] = {}
-        # Pending records were captured before a prior process stopped.  They
+        if data.get("version") == 3:
+            # Webhook-channel split: everything queued under the single
+            # "pending" list predates the legacy/intel separation, so it was
+            # legacy-model behavior regardless of content. Migrate it into
+            # pending_legacy conservatively rather than guessing which items
+            # were H2 summaries.
+            data["pending_legacy"] = data.pop("pending", [])
+            data["pending_intel"] = []
+            data["version"] = 4
+
+        # Pending records were captured before a prior process stopped. They
         # are deliberately never retried: a request can have reached Discord
-        # before a network failure was observed.  Retrying would duplicate a
-        # historic alert and change the collection procedure. Under H2 a
-        # "pending" item is a session summary or immediate alert rather than
-        # a single raw event, but the same restart-replay-suppression logic
-        # applies unchanged.
-        pending = data["pending"]
-        if pending:
-            for item in pending:
-                append_bounded(
-                    data["dead_letters"],
-                    {"id": item.get("id"), "reason": "restart_replay_suppressed"},
-                    MAX_DEAD,
-                )
-                append_bounded(data["seen"], item.get("id"), MAX_SEEN)
-            data["replay_suppressed"] = int(data.get("replay_suppressed", 0)) + len(pending)
-            data["pending"] = []
+        # before a network failure was observed. Retrying would duplicate a
+        # historic alert and change the collection procedure. Applies
+        # independently to both channels.
+        for channel in ("legacy", "intel"):
+            pending = data[f"pending_{channel}"]
+            if pending:
+                for item in pending:
+                    append_bounded(
+                        data["dead_letters"],
+                        {"id": item.get("id"), "reason": "restart_replay_suppressed"},
+                        MAX_DEAD,
+                    )
+                    append_bounded(data["seen"], item.get("id"), MAX_SEEN)
+                data["replay_suppressed"] = int(data.get("replay_suppressed", 0)) + len(pending)
+                data[f"pending_{channel}"] = []
         return data
     except FileNotFoundError:
         return default_state()
@@ -228,11 +270,11 @@ def safe_value(value: object, default: str = "N/A") -> str:
 
 
 def format_alert(event: Dict[str, object]) -> Dict[str, object]:
-    """Build a compact single-event embed.
+    """Build a compact single-event embed for the legacy channel.
 
     Used for the startup ping and, when DISCORD_IMMEDIATE_ALERTS is enabled,
     for the optional immediate alert on a priority event. Session summaries
-    (the default H2 presentation) are built by
+    (the H2 intel-channel presentation) are built by
     session_cluster.build_session_summary_payload instead.
 
     Considered event classes, per the recovered 2025 default: cowrie.login.success,
@@ -309,20 +351,23 @@ def recovery_digest_payload(suppressed_count: int) -> Dict[str, object]:
             {
                 "title": "✅ Discord delivery recovered",
                 "description": (
-                    f"~{suppressed_count} session summaries were held back during a Discord "
-                    "rate-limit window and were not individually replayed. Raw Cowrie "
-                    "telemetry and the S3 archive were not affected."
+                    f"~{suppressed_count} items were held back on this channel during a "
+                    "Discord rate-limit window and were not individually replayed. Raw "
+                    "Cowrie telemetry and the S3 archive were not affected."
                 ),
                 "color": 0x00FF00,
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
-                "footer": {"text": "PatriotPot H2 rate governor"},
+                "footer": {"text": "PatriotPot rate governor"},
             }
         ]
     }
 
 
 class CredentialCache:
-    def __init__(self) -> None:
+    """One instance per Discord webhook channel -- never shared."""
+
+    def __init__(self, parameter_name: str) -> None:
+        self.parameter_name = parameter_name
         self.value: Optional[str] = None
         self.next_refresh = 0.0
 
@@ -336,7 +381,7 @@ class CredentialCache:
             "ssm",
             "get-parameter",
             "--name",
-            PARAMETER_NAME,
+            self.parameter_name,
             "--with-decryption",
             "--query",
             "Parameter.Value",
@@ -358,11 +403,11 @@ class CredentialCache:
         candidate = result.stdout.strip() if result.returncode == 0 else ""
         if candidate and WEBHOOK_RE.fullmatch(candidate):
             if self.value is None:
-                LOGGER.info("credential_available parameter=%s", PARAMETER_NAME)
+                LOGGER.info("credential_available parameter=%s", self.parameter_name)
             self.value = candidate
         else:
             if self.value is not None or force:
-                LOGGER.warning("credential_unavailable parameter=%s", PARAMETER_NAME)
+                LOGGER.warning("credential_unavailable parameter=%s", self.parameter_name)
             self.value = None
         return self.value
 
@@ -428,8 +473,8 @@ def append_bounded(items: List[object], value: object, limit: int) -> None:
         del items[: len(items) - limit]
 
 
-def enqueue_pending(state: Dict[str, object], item_id: str, payload: Dict[str, object]) -> None:
-    pending = state["pending"]
+def enqueue_pending(state: Dict[str, object], item_id: str, payload: Dict[str, object], channel: str) -> None:
+    pending = state[f"pending_{channel}"]
     seen = state["seen"]
     if item_id in seen or any(existing["id"] == item_id for existing in pending):
         return
@@ -489,7 +534,7 @@ def queue_line(state: Dict[str, object], raw_line: bytes, clusters: SessionClust
             except ValueError:
                 payload = None
             if payload is not None:
-                enqueue_pending(state, f"{digest}:immediate", payload)
+                enqueue_pending(state, f"{digest}:immediate", payload, "legacy")
                 LOGGER.info("discord_immediate_alert key=%s kind=%s", key, kind)
 
 
@@ -506,7 +551,7 @@ def _enqueue_summary(
     flush_id: str,
 ) -> None:
     payload = build_session_summary_payload(cluster, enrichment)
-    enqueue_pending(state, flush_id, payload)
+    enqueue_pending(state, flush_id, payload, "intel")
     state["flushed_awaiting_enrichment"].pop(flush_id, None)
     LOGGER.info(
         "discord_cluster_flushed key=%s events=%d enrichment=%s",
@@ -551,8 +596,13 @@ def flush_expired_clusters(
             save_state(state)
 
 
-def drain_pending(state: Dict[str, object], credentials: CredentialCache, governor: DiscordRateGovernor) -> None:
-    pending = state["pending"]
+def drain_pending(
+    state: Dict[str, object],
+    credentials: CredentialCache,
+    governor: DiscordRateGovernor,
+    channel: str,
+) -> None:
+    pending = state[f"pending_{channel}"]
     if not pending:
         return
     webhook = credentials.get()
@@ -578,19 +628,19 @@ def drain_pending(state: Dict[str, object], credentials: CredentialCache, govern
         if success:
             recovered, suppressed = governor.note_success()
             if recovered:
-                LOGGER.info("discord_recovered suppressed=%d", suppressed)
+                LOGGER.info("discord_recovered channel=%s suppressed=%d", channel, suppressed)
                 if suppressed > 0:
                     post_payload(webhook, recovery_digest_payload(suppressed))
             append_bounded(state["seen"], item["id"], MAX_SEEN)
             pending.pop(0)
             save_state(state)
-            LOGGER.info("delivery_success event_sha256=%s", item["id"])
+            LOGGER.info("delivery_success channel=%s event_sha256=%s", channel, item["id"])
             time.sleep(DELIVERY_DELAY_SECONDS)
             continue
         if status_code == 429:
             newly_degraded = governor.note_rate_limited(retry_after)
             if newly_degraded:
-                LOGGER.warning("discord_degraded retry_after=%s", retry_after)
+                LOGGER.warning("discord_degraded channel=%s retry_after=%s", channel, retry_after)
             break
         append_bounded(
             state["dead_letters"],
@@ -600,7 +650,7 @@ def drain_pending(state: Dict[str, object], credentials: CredentialCache, govern
         append_bounded(state["seen"], item["id"], MAX_SEEN)
         pending.pop(0)
         save_state(state)
-        LOGGER.error("delivery_abandoned event_sha256=%s", item["id"])
+        LOGGER.error("delivery_abandoned channel=%s event_sha256=%s", channel, item["id"])
 
 
 def regular_stat(path: Path) -> Optional[os.stat_result]:
@@ -621,6 +671,11 @@ def consume(
     clusters: SessionClusterManager,
     governor: DiscordRateGovernor,
 ) -> int:
+    """`credentials`/`governor` here are always the legacy channel's: an
+    immediate priority alert (the only thing queue_line can enqueue) is
+    legacy-channel content, and per-line draining exists purely so that
+    alert reaches Discord promptly. Intel-channel summaries are only ever
+    produced by flush_expired_clusters, once per poll cycle, not per line."""
     offset = start
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
@@ -643,7 +698,7 @@ def consume(
             # Immediate alerts (if enabled) should reach Discord promptly;
             # the bulk of lines enqueue nothing here and this is a cheap
             # early-return.
-            drain_pending(state, credentials, governor)
+            drain_pending(state, credentials, governor, "legacy")
     return offset
 
 
@@ -657,15 +712,18 @@ def locate_inode(device: int, inode: int) -> Optional[Path]:
 
 def poll_once(
     state: Dict[str, object],
-    credentials: CredentialCache,
+    legacy_credentials: CredentialCache,
+    legacy_governor: DiscordRateGovernor,
+    intel_credentials: CredentialCache,
+    intel_governor: DiscordRateGovernor,
     clusters: SessionClusterManager,
-    governor: DiscordRateGovernor,
     worker: Optional[ThreatIntelWorker],
 ) -> None:
     stat_result = regular_stat(LOG_PATH)
     if stat_result is None:
         flush_expired_clusters(state, clusters, worker)
-        drain_pending(state, credentials, governor)
+        drain_pending(state, legacy_credentials, legacy_governor, "legacy")
+        drain_pending(state, intel_credentials, intel_governor, "intel")
         return
     source = state.get("source")
     if source is None:
@@ -684,7 +742,7 @@ def poll_once(
     if old_identity != new_identity:
         prior = locate_inode(*old_identity)
         if prior is not None:
-            consume(prior, state, int(source["offset"]), credentials, clusters, governor)
+            consume(prior, state, int(source["offset"]), legacy_credentials, clusters, legacy_governor)
         state["source"] = {
             "device": stat_result.st_dev,
             "inode": stat_result.st_ino,
@@ -697,9 +755,10 @@ def poll_once(
         save_state(state)
         LOGGER.warning("copytruncate_detected")
 
-    consume(LOG_PATH, state, int(state["source"]["offset"]), credentials, clusters, governor)
+    consume(LOG_PATH, state, int(state["source"]["offset"]), legacy_credentials, clusters, legacy_governor)
     flush_expired_clusters(state, clusters, worker)
-    drain_pending(state, credentials, governor)
+    drain_pending(state, legacy_credentials, legacy_governor, "legacy")
+    drain_pending(state, intel_credentials, intel_governor, "intel")
 
 
 def self_test() -> None:
@@ -718,6 +777,7 @@ def self_test() -> None:
     assert POLL_SECONDS == 5
     example_url = "https://" + "discord.com/api/" + "webhooks/123/abc_DEF-1"
     assert WEBHOOK_RE.fullmatch(example_url)
+    assert PARAMETER_NAME != DISCORD_INTEL_PARAMETER_NAME
 
     # H2 in-process sanity checks -- deterministic, no network/AWS calls.
     manager = SessionClusterManager(window_seconds=45.0)
@@ -731,6 +791,12 @@ def self_test() -> None:
     assert governor.can_send() is True
     governor.note_send_attempt()
 
+    # Two-channel state shape.
+    state = default_state()
+    assert state["version"] == 4
+    assert state["pending_legacy"] == []
+    assert state["pending_intel"] == []
+
     print("discord-monitor self-test: PASS")
 
 
@@ -740,7 +806,8 @@ def _recover_flushed_awaiting_enrichment(state: Dict[str, object]) -> None:
 
     Recovered without a fresh enrichment attempt -- correctness (never
     silently losing a summary) matters more here than completeness, and
-    keeps process startup itself non-blocking on provider latency.
+    keeps process startup itself non-blocking on provider latency. Recovered
+    summaries always go to the intel channel, same as a normal flush.
     """
     awaiting = state.get("flushed_awaiting_enrichment") or {}
     if not awaiting:
@@ -763,13 +830,15 @@ def main() -> None:
     require_read_only_source()
     state = load_state()
     _recover_flushed_awaiting_enrichment(state)
-    credentials = CredentialCache()
+    legacy_credentials = CredentialCache(PARAMETER_NAME)
+    intel_credentials = CredentialCache(DISCORD_INTEL_PARAMETER_NAME)
     clusters = SessionClusterManager(
         window_seconds=CLUSTER_WINDOW_SECONDS,
         max_cluster_age_seconds=CLUSTER_MAX_AGE_SECONDS,
     )
     clusters.restore_state(state.get("clusters", {}))
-    governor = DiscordRateGovernor(min_interval_seconds=DISCORD_MIN_INTERVAL_SECONDS)
+    legacy_governor = DiscordRateGovernor(min_interval_seconds=DISCORD_MIN_INTERVAL_SECONDS)
+    intel_governor = DiscordRateGovernor(min_interval_seconds=DISCORD_MIN_INTERVAL_SECONDS)
     parameter_registry = ParameterRegistry(
         {
             "greynoise": GREYNOISE_PARAMETER_NAME,
@@ -789,12 +858,12 @@ def main() -> None:
     )
     worker = ThreatIntelWorker(broker)
     LOGGER.info("monitor_started source=%s state=%s", LOG_PATH, STATE_PATH)
-    webhook = credentials.get(force=True)
+    webhook = legacy_credentials.get(force=True)
     if webhook is not None:
         post_payload(webhook, monitor_started_payload())
     while True:
         try:
-            poll_once(state, credentials, clusters, governor, worker)
+            poll_once(state, legacy_credentials, legacy_governor, intel_credentials, intel_governor, clusters, worker)
         except Exception as exc:
             LOGGER.exception("poll_failed reason=%s", type(exc).__name__)
         time.sleep(POLL_SECONDS)
