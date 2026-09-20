@@ -1,0 +1,199 @@
+@startuml h2-class-REVIEWED_CANDIDATE_PRE_DEPLOYMENT
+' =============================================================================
+' STATUS: REVIEWED_CANDIDATE_PRE_DEPLOYMENT
+'
+' Drawn against the reviewed H2 design as of:
+'   - gates/h2/h2-template-patch.json (candidate SHA-256 58f19fc0...)
+'   - tests/test_h2_enrichment_pipeline.py (21/21 green)
+'   - Step 7 review-only change set h2-20260920T204642Z (CREATE_COMPLETE,
+'     never executed)
+'
+' Not yet true of the live stack: the association still fetches
+' discord-monitor.py verified against a8606b55... (H1's original hash) --
+' the H2 sidecar artifacts (this file's right-hand classes) are not yet
+' published or referenced by any deployed resource. See the companion
+' H2BundleId design note for why that publish step needs its own bundle
+' parameter, independent of BootstrapBundleId.
+'
+' After execution, this file must be regenerated or annotated
+' VERIFIED_AS_DEPLOYED, with any divergence recorded explicitly rather than
+' silently folded in.
+' =============================================================================
+
+title H2 Class Diagram -- REVIEWED_CANDIDATE_PRE_DEPLOYMENT
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+
+package "Raw Cowrie Telemetry" {
+  class "cowrie.json line" as RawLine <<external>> {
+    + bytes raw_line
+  }
+}
+
+package "discord-monitor.py (sidecar entrypoint)" {
+  class DiscordMonitorMain <<module functions>> {
+    + queue_line(state, raw_line, clusters)
+    + flush_expired_clusters(state, clusters, worker)
+    + drain_pending(state, credentials, governor, channel)
+    + format_alert(event) : dict
+    + post_payload(url, payload) : (bool, int, float)
+    + main()
+  }
+
+  class CredentialCache {
+    - parameter_name : str
+    + get(force=False) : Optional[str]
+  }
+
+  class DiscordRateGovernor {
+    + degraded : bool
+    + can_send() : bool
+    + note_send_attempt()
+    + note_success() : (bool, int)
+    + note_rate_limited(retry_after) : bool
+    + note_blocked(queue_depth)
+  }
+
+  class MonitorState <<persisted JSON>> {
+    + pending_legacy : list
+    + pending_intel : list
+    + clusters : dict
+    + flushed_awaiting_enrichment : dict
+    + dead_letters : list
+    + seen : list
+  }
+}
+
+package "session_cluster.py (H2 presentation clustering)" {
+  class SessionClusterManager {
+    - _clusters : Dict[str, SessionCluster]
+    + observe(event, now) : (key, cluster, is_new)
+    + flush_expired(now) : List[SessionCluster]
+    + evict_overflow() : List[SessionCluster]
+    + cluster_key_for(event) : str
+  }
+
+  class SessionCluster {
+    + key : str
+    + src_ip : str
+    + session_id : Optional[str]
+    + authenticated : bool
+    + username, password : Optional[str]
+    + commands : List[str]
+    + suspicious_commands : List[str]
+    + files_downloaded, files_uploaded : List[str]
+    + record_event(event, now, max_commands)
+    + is_priority_event(event) : bool
+  }
+
+  class "build_session_summary_payload()" as SummaryBuilder <<function>> {
+    + (cluster, enrichment) : dict
+  }
+}
+
+package "threat_intel (H2 enrichment)" {
+  class ThreatIntelWorker {
+    - _executor : ThreadPoolExecutor
+    - _inflight : int
+    - _max_inflight : int
+    + try_submit(cluster) : bool
+    + drain_completed() : List[(cluster, enrichment)]
+    + inflight_count() : int
+  }
+
+  class ThreatIntelBroker {
+    - _cache : EnrichmentCache
+    - _parameters : ParameterRegistry
+    - _rate_governors : Dict[str, ProviderRateGovernor]
+    + enrich_ip(ip_str) : Dict[str, dict]
+    - _lookup_one(provider, observable) : dict
+  }
+
+  class EnrichmentCache {
+    - _entries : Dict[str, dict]
+    + get(key) : Optional[dict]
+    + set(key, entry, ttl_seconds)
+  }
+
+  class ProviderRateGovernor {
+    + can_call() : bool
+    + note_call_attempt()
+    + note_success()
+    + note_rate_limited(retry_after_seconds)
+  }
+
+  class ParameterRegistry {
+    + get(provider_name) : Optional[str]
+  }
+
+  class ProviderResponse <<dataclass>> {
+    + status : str
+    + http_status : Optional[int]
+    + normalized : dict
+    + raw_body : Optional[bytes]
+    + retry_after_seconds : Optional[float]
+  }
+
+  package "provider modules" {
+    class greynoise <<module>> {
+      + lookup_ip(ip, api_key, timeout) : ProviderResponse
+    }
+    class virustotal <<module>> {
+      + lookup_ip(ip, api_key, timeout) : ProviderResponse
+    }
+    class shodan <<module>> {
+      + lookup_ip(ip, api_key, timeout) : ProviderResponse
+    }
+  }
+
+  class observables <<module>> {
+    + parse_public_ip(candidate) : Optional[IPAddress]
+    + parse_sha256(candidate) : Optional[str]
+  }
+}
+
+' -- relationships -----------------------------------------------------------
+
+RawLine --> DiscordMonitorMain : queue_line()
+DiscordMonitorMain --> SessionClusterManager : observe()
+SessionClusterManager "1" o-- "many" SessionCluster : manages
+
+DiscordMonitorMain --> ThreatIntelWorker : try_submit(cluster) / drain_completed()
+ThreatIntelWorker --> ThreatIntelBroker : enrich_ip(cluster.src_ip)\n(background thread)
+ThreatIntelBroker --> observables : parse_public_ip()
+ThreatIntelBroker --> EnrichmentCache : get()/set()
+ThreatIntelBroker --> ParameterRegistry : get(provider)
+ThreatIntelBroker "1" o-- "3" ProviderRateGovernor : one per provider\n(provider-global cooldown)
+ThreatIntelBroker --> greynoise : lookup_ip()
+ThreatIntelBroker --> virustotal : lookup_ip()
+ThreatIntelBroker --> shodan : lookup_ip()
+greynoise ..> ProviderResponse : returns
+virustotal ..> ProviderResponse : returns
+shodan ..> ProviderResponse : returns
+
+DiscordMonitorMain --> SummaryBuilder : build_session_summary_payload(\n  cluster, enrichment)
+SummaryBuilder --> SessionCluster : reads raw Cowrie fields
+SummaryBuilder ..> DiscordMonitorMain : returns embed payload\n(enqueued to pending_intel)
+
+DiscordMonitorMain --> MonitorState : pending_legacy / pending_intel
+DiscordMonitorMain --> CredentialCache : get() webhook URL
+DiscordMonitorMain --> DiscordRateGovernor : can_send() / note_*()
+
+note right of DiscordMonitorMain
+  format_alert() is the LEGACY / immediate
+  alert path. It reads only the raw Cowrie
+  event -- it has NO dependency edge to
+  ThreatIntelBroker, ThreatIntelWorker, or
+  EnrichmentCache anywhere in this diagram.
+  See the sequence diagram's third flow.
+end note
+
+note right of ThreatIntelBroker
+  Fail-open by construction: every provider
+  exception, timeout, 429, 5xx, or missing
+  credential yields a status envelope, never
+  a raised exception out of enrich_ip().
+end note
+
+@enduml
