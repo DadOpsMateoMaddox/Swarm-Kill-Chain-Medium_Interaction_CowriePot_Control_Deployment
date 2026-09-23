@@ -29,7 +29,27 @@
 ' flow exists to show.
 ' =============================================================================
 
-title H2 Sequence Diagrams -- REVIEWED_CANDIDATE_PRE_DEPLOYMENT
+' ---------------------------------------------------------------------------
+' UPSTREAM DEPENDENCY NOTICE (added 2026-09-23, after P0 recovery)
+'
+' This diagram depicts what happens to Cowrie telemetry ONCE IT EXISTS. It
+' does not depict whether it exists. That is the Cowrie session lifecycle,
+' documented separately in:
+'     docs/diagrams/cowrie-session-lifecycle-P0-FAULT-POINTS.puml
+'
+' RESEARCH-INTEGRITY NOTE: when H2 was validated and closed on 2026-09-20,
+' three upstream defects (evidence/2026-09-23-p0-recovery/) were silently
+' preventing Cowrie from emitting cowrie.command.input at all -- 16,070
+' successful logins produced zero commands. H2's own validation used
+' synthetic fixtures replayed directly through the deployed code path, so
+' those results remain valid for the pipeline itself. But H2's REAL-WORLD
+' input was empty during that window. Any analysis of live enrichment
+' output before 2026-09-23 must account for that, and no conclusion about
+' attacker behaviour may be drawn from the absence of enriched session
+' summaries in that period.
+' ---------------------------------------------------------------------------
+
+title H2 Sequence Diagrams -- VERIFIED_AS_DEPLOYED
 
 == Flow 1: Normal enriched session-summary delivery ==
 

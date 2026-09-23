@@ -1,0 +1,133 @@
+@startuml cowrie-session-lifecycle-P0-FAULT-POINTS
+' =============================================================================
+' STATUS: VERIFIED_AS_DEPLOYED (post P0 recovery, 2026-09-23)
+'
+' Cowrie 2.5.0 post-authentication session lifecycle, annotated with the
+' three P0 defects found on 2026-09-23 and their exact failure points.
+'
+' Provenance: evidence/2026-09-23-p0-recovery/ (SHA256SUMS-manifested).
+' Every fault point below is backed by a captured traceback, not inferred.
+'
+' WHY THIS DIAGRAM EXISTS: this layer is strictly UPSTREAM of the H2
+' enrichment pipeline. H2 consumes cowrie.command.input. If this lifecycle
+' breaks after login.success, H2 has nothing to enrich -- and every
+' service-level health check still passes. The H2 diagrams show what happens
+' to telemetry once it exists; this one shows whether it exists at all.
+' =============================================================================
+
+title Cowrie Session Lifecycle — P0 Fault Points (VERIFIED_AS_DEPLOYED 2026-09-23)
+
+skinparam sequenceMessageAlign left
+skinparam maxMessageSize 220
+
+participant "Attacker / client" as C
+participant "HoneyPotSSHTransport" as T
+participant "UserAuthServer" as A
+participant "CowrieSSHConnection\n/ HoneyPotSSHSession" as S
+participant "shell/server.py\ninitFileSystem" as SRV
+participant "insults.py\nLoggingServerProtocol" as I
+participant "cowrie.json\n(telemetry)" as J
+
+== Transport establishment ==
+
+C -> T : TCP connect
+T -> J : cowrie.session.connect
+C -> T : SSH version exchange
+T -> J : cowrie.client.version
+C -> T : KEXINIT / host-key algorithm negotiation
+T -> T : privHostKey.sign(exchangeHash,\n  signatureType=self.keyAlg)
+
+note right of T #FFCCCC
+  **P0A FAULT POINT** — transport.py:1585 / :1690
+  Ed25519 key material occupied the rsa_* slot.
+  Client negotiating ssh-rsa =>
+    BadSignatureAlgorithmError
+  Transport dies HERE. No auth, no shell.
+  Survival depended on the client's chosen
+  algorithm — which is why the failure looked
+  intermittent rather than total.
+  STATUS: FIXED (type-correct slots;
+  Ed25519 fingerprint preserved)
+end note
+
+T -> J : cowrie.client.kex
+
+== Authentication ==
+
+C -> A : userauth (password)
+A -> J : **cowrie.login.success**
+note right of A
+  Everything above this line worked even
+  while the sensor was producing zero
+  intelligence. 16,070 logins reached
+  exactly this point and no further.
+end note
+
+== Session channel ==
+
+C -> S : channel open "session"
+S -> J : (channel open)
+C -> S : request_env (LANG=...)
+S -> J : cowrie.client.var
+
+== Shell / exec request — where it actually died ==
+
+C -> S : request_exec("whoami")  /  request_shell + pty-req
+S -> SRV : execCommand -> initFileSystem(home)
+SRV -> SRV : HoneyPotFilesystem(arch, home)
+SRV -> SRV : getCommandOutput(\n  CowrieConfig.get("shell","processes"))
+
+note right of SRV #FFCCCC
+  **P0B1 FAULT POINT** — server.py:72 / :83
+  [shell] processes = 5  ->  open("5")
+    FileNotFoundError
+  Only NoOptionError is caught, so this
+  escapes initFileSystem and surfaces as
+  SSH_MSG_CHANNEL_FAILURE.
+  Runs on FIRST exec/shell request, not at
+  startup — so the service boots clean.
+  STATUS: FIXED (-> cmdoutput.json, absolute)
+end note
+
+SRV -> I : protocol.makeConnection(processprotocol)
+I -> I : connectionMade()\nttylog.ttylog_open(ttylogFile, startTime)
+
+note right of I #FFCCCC
+  **P0B2 FAULT POINT** — insults.py:69 -> ttylog.py:27
+  /opt/cowrie/var/lib/cowrie/tty was
+  root:cowrie 0750; cowrie user had no write.
+    PermissionError [Errno 13]
+  connectionMade runs UPSTREAM of the
+  exec/interactive split (insults.py:47-50),
+  so it killed BOTH modes identically.
+  STATUS: FIXED (chown cowrie:cowrie)
+end note
+
+== Post-repair: telemetry finally produced ==
+
+S -> J : **cowrie.session.params**
+S -> J : **cowrie.command.input**  input='whoami'
+I -> I : ttylog_close -> os.rename(file, <input-hash>)\n(insults.py:214-221, also needs dir write)
+S -> J : cowrie.log.closed
+T -> J : cowrie.session.closed
+
+note over J #CCFFCC
+  These four events are what the H2
+  enrichment pipeline consumes.
+  Before 2026-09-23 they were never emitted:
+  16,070 login.success / 0 command.input.
+  2025 control baseline for comparison:
+  80.1% post-auth command rate,
+  median login -> first command ~0.464s.
+end note
+
+note across #FFFFCC
+  COMMON FAILURE CHARACTER: all three defects allowed Cowrie to boot, bind
+  its listener, complete KEX, authenticate, open a channel, and accept
+  environment variables. Each failed only at the moment an attacker tried to
+  act. No service-level health check — systemd state, port binding, auth
+  success rate — could detect any of them. Detection required either
+  post-auth telemetry rate monitoring or an active end-to-end shell probe.
+end note
+
+@enduml

@@ -1,0 +1,171 @@
+@startuml deception-filesystem-P0C-TARGET
+' =============================================================================
+' STATUS: MIXED — read the per-tier status markers. NOTHING BELOW MARKED
+'         "PROPOSED" OR "RECONSTRUCTION" IS DEPLOYED.
+'
+' Three distinct tiers, deliberately NOT merged, because conflating them is
+' how a reconstruction quietly becomes fiction:
+'
+'   TIER 1  CURRENT_DEPLOYED          — verified on-host 2026-09-23
+'   TIER 2  2025_TELEMETRY_EVIDENCED  — reconstructable from recovered corpus
+'   TIER 3  PROPOSED_NOT_IMPLEMENTED  — design intent, no evidence, not built
+'
+' Evidence rule carried from the AuthParity gate: raw preserved corpus
+' outranks paper summaries. Items the paper asserts but the corpus does NOT
+' corroborate are recorded as insufficient authority and are NOT drawn as
+' though they existed.
+' =============================================================================
+
+title Deception Filesystem — Current / Evidenced / Proposed (P0C)
+
+skinparam defaultTextAlignment left
+skinparam roundcorner 6
+
+legend top
+  |= Tier |= Meaning |= Deployed? |
+  | <back:#CCFFCC>TIER 1</back> | CURRENT_DEPLOYED — verified on host | YES |
+  | <back:#FFF2CC>TIER 2</back> | 2025_TELEMETRY_EVIDENCED — direct corpus evidence | NO — target for P0C |
+  | <back:#FFE0E0>TIER 3</back> | PROPOSED_NOT_IMPLEMENTED — design intent only | NO — no evidence |
+endlegend
+
+package "TIER 1 — CURRENT_DEPLOYED (stock Cowrie v2.5.0 fs.pickle)" #CCFFCC {
+  card current [
+  fs.pickle SHA-256 06f0ed52...
+  Pinned by bootstrap-native.sh:287, which FAILS CLOSED on mismatch.
+  Recognisable as the stock Cowrie tree to anyone who knows Cowrie.
+  ----
+  /  (23 top-level entries)
+   ├── bin  boot  dev  etc  home  lib  media  mnt  opt
+   ├── proc  root  run  sbin  selinux  srv  sys  tmp  usr  var
+   ├── initrd.img   vmlinuz   lost+found
+   └── **test2**            <-- stock-tree artifact, not ours
+  ----
+  /home/
+   └── phil/                <-- ONLY user present
+        ├── .bash_logout
+        ├── .bashrc
+        └── .profile
+  ----
+  honeyfs/ (contents layer) supplies bodies for:
+   /etc/passwd, /etc/shadow, /etc/group, /etc/hosts, /etc/issue,
+   /etc/motd, /etc/resolv.conf, /etc/inittab, /etc/host.conf,
+   /proc/cpuinfo, /proc/meminfo, /proc/version, /proc/mounts,
+   /proc/modules, /proc/net/arp, /home/admin/passwords.txt
+  ----
+  **CRITICAL**: honeyfs/ only supplies CONTENTS for paths that already
+  exist in fs.pickle. /home/admin/passwords.txt is staged in honeyfs but
+  **/home/admin does not exist in the pickle**, so it is unreachable.
+  ]
+}
+
+package "TIER 2 — 2025_TELEMETRY_EVIDENCED (P0C restoration target)" #FFF2CC {
+  card evidenced [
+  Reconstructable from the recovered 2025 corpus — direct event evidence,
+  not paper assertion.
+  ----
+  hostname / prompt:  **web-server-prod**
+  ----
+  /home/
+   ├── admin/
+   │    ├── .ssh/
+   │    └── passwords.txt
+   ├── backup/
+   ├── deploy/
+   │    └── config.json
+   ├── lmenendez/
+   ├── root/
+   ├── webuser/
+   └── wfingerdoo/
+  ----
+  /home/deploy/config.json returned:
+    { "db_password": "prod2023!", "api_key": "sk-1234567890" }
+  (historical synthetic canaries — fake by construction)
+  ----
+  **THE ACTUAL ATTACKER OBJECTIVE**, observed repeatedly across multiple
+  unrelated source IPs:
+    cd ~ ; chattr -ia .ssh ; lockr -ia .ssh
+    rm -rf .ssh && mkdir .ssh
+    echo "ssh-rsa ..." >> .ssh/authorized_keys
+    chmod -R go= ~/.ssh
+  ----
+  cowrie.session.file_download emitted for attacker writes to:
+    /root/.ssh/authorized_keys
+    /home/admin/.ssh/authorized_keys
+  ----
+  => The 2025 environment did NOT need elaborate bait. It needed
+     ~/.ssh to be present and manipulable, plus enough Linux
+     semantics to support the chain above.
+  ]
+}
+
+package "TIER 3 — PROPOSED_NOT_IMPLEMENTED (modern backend profile)" #FFE0E0 {
+  card proposed [
+  Design intent for a SEPARATE, versioned deception profile.
+  NO telemetry evidence. NOT built. NOT deployed.
+  Intended as an experimental lure variable AFTER parity is restored —
+  never as a prerequisite for Cowrie functioning.
+  ----
+  /opt/app/
+   ├── backend/{api,auth,core,db,integrations,middleware,
+   │            models,services,workers,utils}/
+   ├── config/{environments,feature_flags,logging}/
+   ├── data/{cache,exports,imports,staging}/
+   ├── migrations/   scripts/{maintenance,deployment,backfill}/
+   ├── jobs/{scheduled,adhoc}/
+   ├── logs/{api,worker,audit}/
+   ├── backups/{daily,pre_migration}/
+   ├── docs/{runbooks,architecture,api}/
+   └── tmp/
+  ----
+  SaaS / AI-backend extension:
+   /opt/app/{agent_runtime,model_gateway,evaluation,connectors,
+             tool_registry,policy,telemetry,vectorstore,
+             prompt_templates,workflows}/
+  ----
+  Accounting-persona extension:
+   /home/{deploy,svc-api,jean,backup,ubuntu}/
+   /srv/accounting/
+   /opt/app/data/exports/{customer_export_2026-08.csv,
+                          billing_reconciliation.csv}
+   /opt/app/backups/pre_migration/{customer_db_20260901.sql.gz,
+                                   accounting-prod.sql.gz}
+  ----
+  **CONSISTENCY REQUIREMENT**: fake values must agree ACROSS files.
+  .env / DSNs / cloud identifiers / git remotes / audit logs must not
+  contradict each other. An agent will notice if DATABASE_URL says
+  PostgreSQL 15 while every runbook says MySQL 8.
+  ]
+}
+
+package "EXCLUDED — insufficient reconstruction authority" #EEEEEE {
+  card excluded [
+  Asserted by the paper, **NOT** found in the recovered corpus on direct
+  search. Deliberately NOT reconstructed.
+  ----
+    rat_loader_v5.py      paper_claim: yes  telemetry: NO
+    db_dump.sql           paper_claim: yes  telemetry: NO
+  ----
+  classification: reconstruction_authority = INSUFFICIENT
+  Rebuilding these would fabricate history, not restore it.
+  ]
+}
+
+current -[#black]-> evidenced : **P0C** — restore evidenced parity first
+evidenced -[#black]-> proposed : only AFTER parity verified;\nseparate versioned profile
+excluded -[#gray,dashed]-> proposed : NOT carried forward
+
+note bottom
+  IMPLEMENTATION CONSTRAINT (from P0 recovery, evidence/2026-09-23-p0-recovery/):
+  fs.pickle defines the NAMESPACE; honeyfs/ supplies CONTENTS only.
+  Adding directories requires modifying fs.pickle — dropping files into
+  honeyfs/ alone accomplishes nothing, as /home/admin/passwords.txt
+  currently demonstrates.
+
+  DELIVERY CONSTRAINT: bootstrap-native.sh is BootstrapBundleId -> UserData
+  -> INSTANCE REPLACEMENT. Filesystem changes to the running sensor must
+  ship via an SSM Association (AuthParity / H2 precedent), and the stock
+  fs.pickle hash pin at bootstrap-native.sh:287 must be revised in the same
+  change or it will fail closed.
+end note
+
+@enduml
