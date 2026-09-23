@@ -1,0 +1,156 @@
+# P0C-C attacker-visible PTY transcripts (ANSI stripped).
+# Probe 1: session c304c5ea98e0. Probe 2: session 1e3b3654ca70.
+# These are what an attacker would have seen, verbatim.
+
+================================ PROBE 1 ================================
+Warning: Permanently added '[127.0.0.1]:2222' (ED25519) to the list of known hosts.
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+[4hroot@gmu-server:~# whoami
+[4lroot
+[4hroot@gmu-server:~# id
+[4luid=0(root) gid=0(root) groups=0(root)
+[4hroot@gmu-server:~# pwd
+[4l/root
+[4hroot@gmu-server:~# uname -a
+[4lLinux gmu-server 3.2.0-4-amd64 #1 SMP Debian 3.2.68-1+deb7u1 x86_64 GNU/Linux
+[4hroot@gmu-server:~# hostname
+[4lgmu-server
+[4hroot@gmu-server:~# ls -la
+[4ldrwx------ 1 root root 4096 2013-04-05 12:25 .
+drwxr-xr-x 1 root root 4096 2013-04-05 12:03 ..
+drwx------ 1 root root 4096 2013-04-05 11:58 .aptitude
+-rw-r--r-- 1 root root  570 2013-04-05 11:52 .bashrc
+-rw-r--r-- 1 root root  140 2013-04-05 11:52 .profile
+drwx------ 1 root root 4096 2013-04-05 12:05 .ssh
+[4hroot@gmu-server:~# ls /home
+[4l
+phil 
+[4hroot@gmu-server:~# ls -la /home
+[4ldrwxr-xr-x 1 root  root 4096 2013-04-05 12:02 .
+drwxr-xr-x 1 root  root 4096 2013-04-05 12:03 ..
+drwxr-xr-x 1 admin phil 4096 2013-04-05 12:02 phil
+[4hroot@gmu-server:~# cd ~
+[4l[4hroot@gmu-server:~# pwd
+[4l/root
+[4hroot@gmu-server:~# ls -la .ssh
+[4ldrwx------ 1 root root 4096 2013-04-05 12:05 .
+drwx------ 1 root root 4096 2013-04-05 12:25 ..
+-rw-r--r-- 1 root root  442 2013-04-05 12:05 known_hosts
+[4hroot@gmu-server:~# cat .ssh/authorized_keys
+[4lcat: .ssh/authorized_keys: No such file or directory
+[4hroot@gmu-server:~# cat /etc/passwd
+[4lroot:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+mysql:x:104:108:MySQL Server:/nonexistent:/bin/false
+admin:x:1000:1000:Admin User:/home/admin:/bin/bash
+[4hroot@gmu-server:~# ls /root
+[4l[4hroot@gmu-server:~# ps
+[4l
+
+
+[4hroot@gmu-server:~# exit
+[4lConnection to 127.0.0.1 closed.
+
+================================ PROBE 2 ================================
+Warning: Permanently added '[127.0.0.1]:2222' (ED25519) to the list of known hosts.
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+root@gmu-server:~# pwd
+/root
+root@gmu-server:~# whoami
+root
+root@gmu-server:~# id
+uid=0(root) gid=0(root) groups=0(root)
+root@gmu-server:~# uname -a
+Linux gmu-server 3.2.0-4-amd64 #1 SMP Debian 3.2.68-1+deb7u1 x86_64 GNU/Linux
+root@gmu-server:~# ls -la /
+drwxr-xr-x 1 root root  4096 2013-04-05 12:03 .
+drwxr-xr-x 1 root root  4096 2013-04-05 12:03 ..
+drwxr-xr-x 1 root root  4096 2013-04-05 11:53 bin
+drwxr-xr-x 1 root root  4096 2013-04-05 12:02 boot
+drwxr-xr-x 1 root root  3060 2013-04-05 12:03 dev
+drwxr-xr-x 1 root root  4096 2013-04-05 12:06 etc
+drwxr-xr-x 1 root root  4096 2013-04-05 12:02 home
+lrwxrwxrwx 1 root root    32 2013-04-05 11:53 initrd.img -> /boot/initrd.img-3.2.0-4-686-pae
+drwxr-xr-x 1 root root  4096 2013-04-05 12:01 lib
+drwx------ 1 root root 16384 2013-04-05 11:52 lost+found
+drwxr-xr-x 1 root root  4096 2013-04-05 11:52 media
+drwxr-xr-x 1 root root  4096 2013-04-05 11:52 mnt
+drwxr-xr-x 1 root root  4096 2013-04-05 11:52 opt
+dr-xr-xr-x 1 root root     0 2013-04-05 12:03 proc
+drwx------ 1 root root  4096 2013-04-05 12:25 root
+drwxr-xr-x 1 root root   380 2013-04-05 12:06 run
+drwxr-xr-x 1 root root  4096 2013-04-05 12:03 sbin
+drwxr-xr-x 1 root root  4096 2013-04-05 11:52 selinux
+drwxr-xr-x 1 root root  4096 2013-04-05 11:52 srv
+drwxr-xr-x 1 root root     0 2013-04-05 12:03 sys
+-rwxr-xr-x 1 root root   500 2021-05-30 04:44 test2
+drwxrwxrwt 1 root root  4096 2013-04-05 12:17 tmp
+drwxr-xr-x 1 root root  4096 2013-04-05 11:52 usr
+drwxr-xr-x 1 root root  4096 2013-04-05 11:52 var
+lrwxrwxrwx 1 root root    28 2013-04-05 11:53 vmlinuz -> /boot/vmlinuz-3.2.0-4-686-pae
+root@gmu-server:~# ls -la /home
+drwxr-xr-x 1 root  root 4096 2013-04-05 12:02 .
+drwxr-xr-x 1 root  root 4096 2013-04-05 12:03 ..
+drwxr-xr-x 1 admin phil 4096 2013-04-05 12:02 phil
+root@gmu-server:~# ls -la /root
+drwx------ 1 root root 4096 2013-04-05 12:25 .
+drwxr-xr-x 1 root root 4096 2013-04-05 12:03 ..
+drwx------ 1 root root 4096 2013-04-05 11:58 .aptitude
+-rw-r--r-- 1 root root  570 2013-04-05 11:52 .bashrc
+-rw-r--r-- 1 root root  140 2013-04-05 11:52 .profile
+drwx------ 1 root root 4096 2013-04-05 12:05 .ssh
+root@gmu-server:~# ls -la /tmp
+drwxrwxrwt 1 root root 4096 2013-04-05 12:17 .
+drwxr-xr-x 1 root root 4096 2013-04-05 12:03 ..
+drwxrwxrwt 1 root root 4096 2013-04-05 12:03 .ICE-unix
+drwxrwxrwt 1 root root 4096 2013-04-05 12:03 .X11-unix
+root@gmu-server:~# ls -la /var
+drwxr-xr-x 1 root root  4096 2013-04-05 11:52 .
+drwxr-xr-x 1 root root  4096 2013-04-05 12:03 ..
+drwxr-xr-x 1 root root  4096 2013-04-05 11:52 backups
+drwxr-xr-x 1 root root  4096 2013-04-05 12:02 cache
+drwxr-xr-x 1 root root  4096 2013-04-05 12:06 lib
+drwxrwsr-x 1 root staff 4096 2013-04-05 11:52 local
+lrwxrwxrwx 1 root root     9 2013-04-05 11:52 lock -> /run/lock
+drwxr-xr-x 1 root root  4096 2013-04-05 12:03 log
+drwxrwsr-x 1 root mail  4096 2013-04-05 11:52 mail
+drwxr-xr-x 1 root root  4096 2013-04-05 11:52 opt
+lrwxrwxrwx 1 root root     4 2013-04-05 11:52 run -> /run
+drwxr-xr-x 1 root root  4096 2013-04-05 11:52 spool
+drwxrwxrwt 1 root root  4096 2013-04-05 11:58 tmp
+root@gmu-server:~# ls -la /var/backups
+drwxr-xr-x 1 root root 4096 2013-04-05 11:52 .
+drwxr-xr-x 1 root root 4096 2013-04-05 11:52 ..
+root@gmu-server:~# ls -ld ~
+ls: cannot access /root/~: No such file or directory
+root@gmu-server:~# ls -ld ~/.ssh
+root@gmu-server:~# ls -la ~/.ssh
+drwx------ 1 root root 4096 2013-04-05 12:05 .
+drwx------ 1 root root 4096 2013-04-05 12:25 ..
+-rw-r--r-- 1 root root  442 2013-04-05 12:05 known_hosts
+root@gmu-server:~# ls -l /tmp/rat_loader_v5.py
+ls: cannot access /tmp/rat_loader_v5.py: No such file or directory
+root@gmu-server:~# ls -l /var/backups/db_dump.sql
+ls: cannot access /var/backups/db_dump.sql: No such file or directory
+root@gmu-server:~# ls -la /home/admin
+ls: cannot access /home/admin: No such file or directory
+root@gmu-server:~# cat /home/admin/passwords.txt
+cat: /home/admin/passwords.txt: No such file or directory
+root@gmu-server:~# ls -la /opt
+drwxr-xr-x 1 root root 4096 2013-04-05 11:52 .
+drwxr-xr-x 1 root root 4096 2013-04-05 12:03 ..
+root@gmu-server:~# exit
+Connection to 127.0.0.1 closed.

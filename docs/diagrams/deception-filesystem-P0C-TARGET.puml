@@ -14,6 +14,26 @@
 ' outranks paper summaries. Items the paper asserts but the corpus does NOT
 ' corroborate are recorded as insufficient authority and are NOT drawn as
 ' though they existed.
+'
+' -----------------------------------------------------------------------------
+' P0C-C CORRECTION (2026-09-23) -- this diagram was drafted BEFORE direct
+' observation. Two claims below were revised by
+' evidence/2026-09-23-p0c-characterization/:
+'
+'   1. /root/.ssh IS PRESENT (0700, contains known_hosts). An earlier reading
+'      of TIER 2 implied ~/.ssh was part of the missing parity surface. It is
+'      NOT. Absence of ~/.ssh is eliminated as an explanation for the
+'      behavioural gap. TIER 2's real content is the ADDITIONAL home
+'      directories and the hostname, not ~/.ssh itself.
+'
+'   2. The gap is not purely a namespace gap. Command EMULATION is separately
+'      defective (bare-tilde expansion, ls -d, and ps rendering no rows even
+'      after the P0B1 fix). Regenerating fs.pickle will not address these.
+'
+' Everything in TIER 1 below was subsequently confirmed by DIRECT_PTY_
+' OBSERVATION against fs.pickle 06f0ed52...6da9, hash-identical before and
+' after the probe.
+' -----------------------------------------------------------------------------
 ' =============================================================================
 
 title Deception Filesystem — Current / Evidenced / Proposed (P0C)
@@ -45,6 +65,25 @@ package "TIER 1 — CURRENT_DEPLOYED (stock Cowrie v2.5.0 fs.pickle)" #CCFFCC {
         ├── .bash_logout
         ├── .bashrc
         └── .profile
+  ----
+  /root/                    <-- **P0C-C OBSERVED**: persistence target
+   ├── .aptitude/              EXISTS and is correct. drwx------
+   ├── .bashrc
+   ├── .profile
+   └── **.ssh/**   drwx------  <-- PRESENT, 0700, holds known_hosts.
+        └── known_hosts            authorized_keys absent (normal).
+  ----
+  /var/backups/  exists, EMPTY      /opt/  exists, EMPTY
+  /tmp/  holds only .ICE-unix, .X11-unix
+  ----
+  **FINGERPRINTS OBSERVED (P0C-C)**
+   /test2                  500-byte file in /, mtime 2021 among 2013 siblings
+   /etc/passwd declares admin -> /home/admin, which does NOT exist
+  ----
+  **EMULATION DEFECTS (not namespace; fs.pickle will NOT fix these)**
+   ls -ld ~        -> "cannot access /root/~"  (bare ~ unexpanded)
+   ls -d <dir>     -> silent empty output      (-d unsupported)
+   ps              -> no rows, despite P0B1 fix (crash-fixed != output-correct)
   ----
   honeyfs/ (contents layer) supplies bodies for:
    /etc/passwd, /etc/shadow, /etc/group, /etc/hosts, /etc/issue,

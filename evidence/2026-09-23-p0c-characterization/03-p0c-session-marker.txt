@@ -1,0 +1,40 @@
+# P0C-C synthetic validation traffic marker.
+#
+# Same convention as the P0A/P0B recovery bundle: loopback origin, distinct
+# marker credential, excluded from attacker statistics.
+
+marker_credential: root / P0C-CHARACTERIZATION-20260923
+source_ip:         127.0.0.1   (on-instance loopback listener)
+listener:          127.0.0.1:2222
+client:            SSH-2.0-OpenSSH_7.4
+client_hassh:      41ad223a9005f59c1bd3eee3cef3cab0
+host_key_alg:      ssh-ed25519 (forced exact)
+synthetic:         true
+exclude_from_attacker_statistics: true
+
+sessions:
+  - id: c304c5ea98e0
+    probe: 1 (baseline orientation + ~/.ssh)
+    connect_utc: 2026-09-23T08:07:23.360234Z
+    closed_utc:  2026-09-23T08:07:23.502454Z
+    duration_s:  0.14143991470336914
+    command_input_count: 16
+    ttylog_shasum: c1f63a3b3e733f4e283f7d803a7198d223e77b380e311e71abce71824ac96750
+
+  - id: 1e3b3654ca70
+    probe: 2 (expanded path coverage + bait-artifact presence test)
+    connect_utc: 2026-09-23T08:13:14.937718Z
+    closed_utc:  2026-09-23T08:13:15.044451Z
+    duration_s:  0.10611343383789062
+    command_input_count: 19
+    ttylog_shasum: ed633da4325639392a868fdc762ed57099891be7ac0ee910608b823127d53c9f
+
+# NOTE ON ttylog_shasum: this is Cowrie's own digest over the session input
+# stream (cowrie.log.closed.shasum), which is also used as the on-disk
+# filename. It is NOT the sha256 of the ttylog FILE -- the file carries
+# additional framing. The file's own digest is in SHA256SUMS. Both are
+# recorded so neither claim is overstated.
+
+# Commands issued were OBSERVATIONAL ONLY: pwd, whoami, id, uname, hostname,
+# ls, cat, ps, cd, exit. No touch, mkdir, rm, chmod, chattr, redirection, or
+# key injection. Nothing in this gate depends on cleanup.

@@ -1,0 +1,11 @@
+# P0C-C  backing artifact digest, captured BEFORE and AFTER both probes.
+# Read-only. The probes are observational; this file proves they were.
+
+06f0ed527bdc133b3fabca5def3db084b120bdf6b8e47736a85cd12e98b36da9  /opt/cowrie/share/cowrie/fs.pickle
+
+probe_1 (session c304c5ea98e0)  PRE == POST   FS_PICKLE_UNCHANGED=YES
+probe_2 (session 1e3b3654ca70)  PRE == POST   FS_PICKLE_UNCHANGED=YES
+
+This value equals the stock Cowrie v2.5.0 fs.pickle hash pinned at
+native/bootstrap-native.sh:287, which fails closed on mismatch.
+The deployed namespace is therefore STOCK -- unmodified since install.

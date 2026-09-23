@@ -1,0 +1,104 @@
+# P0C-C  DECLARED vs OBSERVED.
+#
+# Rule carried from the AuthParity gate and restated by the operator:
+# historical authority is NOT collapsed into current observation. For each
+# path, current deployment state and 2025 historical state are recorded
+# SEPARATELY, and a reconstruction decision is made explicitly.
+#
+# reconstruction_action.allowed = false means: do not recreate this merely
+# because a document asserts it existed.
+
+legend:
+  authority:
+    DIRECT_PTY_OBSERVATION: seen this gate, against a hashed artifact
+  historical_2025:
+    VERIFIED: present in the recovered raw corpus
+    CORROBORATED: consistent with corpus but not directly evidenced
+    INSUFFICIENT: asserted by the paper only; not found in the corpus
+
+deltas:
+
+  - path: /home/admin
+    current_deployment: {observed: false, authority: DIRECT_PTY_OBSERVATION}
+    historical_2025: {state: VERIFIED}
+    reconstruction_action: {allowed: true, priority: P1}
+    rationale: >
+      Corpus-evidenced, and its absence already produces an internal
+      contradiction with the deployed /etc/passwd.
+
+  - path: /home/admin/.ssh
+    current_deployment: {observed: false, authority: DIRECT_PTY_OBSERVATION}
+    historical_2025: {state: VERIFIED}
+    reconstruction_action: {allowed: true, priority: P1}
+    rationale: >
+      2025 emitted cowrie.session.file_download for attacker writes to
+      /home/admin/.ssh/authorized_keys.
+
+  - path: /home/{backup,deploy,lmenendez,root,webuser,wfingerdoo}
+    current_deployment: {observed: false, authority: DIRECT_PTY_OBSERVATION}
+    historical_2025: {state: VERIFIED}
+    reconstruction_action: {allowed: true, priority: P2}
+
+  - path: /home/deploy/config.json
+    current_deployment: {observed: false, authority: DIRECT_PTY_OBSERVATION}
+    historical_2025: {state: VERIFIED}
+    reconstruction_action: {allowed: true, priority: P2}
+    note: historical synthetic canaries, fake by construction
+
+  - path: hostname
+    current_deployment: {observed: "gmu-server", authority: DIRECT_PTY_OBSERVATION}
+    historical_2025: {state: VERIFIED, value: "web-server-prod"}
+    reconstruction_action: {allowed: true, priority: P1}
+    note: >
+      Changing this changes attacker-visible sensor identity. It is a
+      measurement-continuity decision, not a pure bug fix, and must be made
+      deliberately rather than folded into a filesystem change.
+
+  - path: /root/.ssh
+    current_deployment: {observed: true, authority: DIRECT_PTY_OBSERVATION}
+    historical_2025: {state: VERIFIED}
+    reconstruction_action: {allowed: false, priority: none}
+    rationale: >
+      ALREADY PRESENT AND CORRECT. This overturns the pre-probe expectation
+      recorded in docs/diagrams/deception-filesystem-P0C-TARGET.puml, which
+      implied ~/.ssh was part of the missing parity surface. It is not.
+
+  - path: /test2
+    current_deployment: {observed: true, authority: DIRECT_PTY_OBSERVATION}
+    historical_2025: {state: INSUFFICIENT}
+    reconstruction_action: {allowed: false, priority: P2_REMOVAL}
+    note: stock-tree fingerprint; candidate for REMOVAL, not reconstruction
+
+  # ---- historical authority deliberately NOT honoured -------------------
+
+  - path: /tmp/rat_loader_v5.py
+    current_deployment: {observed: false, authority: DIRECT_PTY_OBSERVATION}
+    historical_2025: {state: INSUFFICIENT}
+    reconstruction_action: {allowed: false}
+    rationale: >
+      The prior Patriot Pot paper states the customised 2025 fs.pickle
+      contained this file, and later attributes behavioural effects to
+      attacker interaction with it. That is evidence of a CLAIM. It is not
+      reconstruction authority: direct search of the recovered corpus did not
+      find it. Recreating it would fabricate history rather than restore it.
+      The paper's claim is preserved here so it can be re-adjudicated if
+      primary evidence surfaces.
+
+  - path: /var/backups/db_dump.sql
+    current_deployment: {observed: false, authority: DIRECT_PTY_OBSERVATION}
+    historical_2025: {state: INSUFFICIENT}
+    reconstruction_action: {allowed: false}
+    rationale: same as /tmp/rat_loader_v5.py
+
+  # ---- not a filesystem delta at all ------------------------------------
+
+  - path: "shell: bare-tilde expansion, ls -d, ps output"
+    current_deployment: {observed: "defective", authority: DIRECT_PTY_OBSERVATION}
+    historical_2025: {state: CORROBORATED}
+    reconstruction_action: {allowed: true, priority: P1, target: NOT_fs_pickle}
+    rationale: >
+      These are command-emulation defects, not namespace defects. They will
+      NOT be fixed by regenerating fs.pickle, and must not be bundled into
+      that change. The 2025 attacker chain used "cd ~" (which works) rather
+      than bare "~" as an argument, so this did not block 2025 parity -- but
+      it is an attacker-detectable tell today.

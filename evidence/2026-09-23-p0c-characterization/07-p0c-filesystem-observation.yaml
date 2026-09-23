@@ -1,0 +1,130 @@
+# P0C-C  ATTACKER-VISIBLE FILESYSTEM, AS OBSERVED.
+#
+# Authority for every entry below: DIRECT_PTY_OBSERVATION against
+# fs.pickle 06f0ed527bdc133b3fabca5def3db084b120bdf6b8e47736a85cd12e98b36da9
+# (hash identical before and after; see 01-...).
+#
+# This file records ONLY what was seen. It makes no claim about what
+# should exist. That comparison is 08-p0c-declared-vs-observed-diff.yaml.
+
+observation:
+  gate: P0C-C
+  utc: "2026-09-23T08:07:23Z .. 2026-09-23T08:13:15Z"
+  backing_artifact_sha256: 06f0ed527bdc133b3fabca5def3db084b120bdf6b8e47736a85cd12e98b36da9
+  sessions: [c304c5ea98e0, 1e3b3654ca70]
+  method: DIRECT_PTY_OBSERVATION
+  mutating_commands_issued: 0
+
+identity:
+  prompt: "root@gmu-server:~#"
+  hostname: gmu-server
+  uname: "Linux gmu-server 3.2.0-4-amd64 #1 SMP Debian 3.2.68-1+deb7u1 x86_64 GNU/Linux"
+  uid: "uid=0(root) gid=0(root) groups=0(root)"
+  cwd_at_login: /root
+
+root_directory:
+  entry_count: 23
+  entries: [bin, boot, dev, etc, home, initrd.img, lib, lost+found, media,
+            mnt, opt, proc, root, run, sbin, selinux, srv, sys, test2, tmp,
+            usr, var, vmlinuz]
+  anomaly:
+    path: /test2
+    observed: true
+    mode: "-rwxr-xr-x root:root 500 bytes 2021-05-30"
+    note: >
+      Stock Cowrie tree artifact. Its mtime (2021) is inconsistent with every
+      other entry (2013), and it has no plausible role on a production host.
+      This is a HONEYPOT FINGERPRINT, observable by any attacker running
+      "ls /". Recorded, not removed -- removal is a P0C-R decision.
+
+paths:
+  - path: /home
+    observed: true
+    children: [phil]
+    note: single user; 2025 baseline had seven
+
+  - path: /home/admin
+    observed: false
+    authority: DIRECT_PTY_OBSERVATION
+    note: >
+      CONFIRMS the namespace/contents split. honeyfs/home/admin/passwords.txt
+      EXISTS on the host (see 02-...) but is UNREACHABLE to an attacker,
+      because /home/admin is absent from fs.pickle. honeyfs supplies bodies
+      only for paths the pickle already declares.
+
+  - path: /home/admin/passwords.txt
+    observed: false
+    host_staged: true
+    attacker_reachable: false
+
+  - path: /root
+    observed: true
+    mode: "drwx------ root:root"
+    children: [.aptitude, .bashrc, .profile, .ssh]
+
+  - path: /root/.ssh
+    observed: true
+    mode: "drwx------ root:root 4096"
+    children: [known_hosts]
+    significance: >
+      MATERIALLY DIFFERENT FROM THE PRE-PROBE EXPECTATION. ~/.ssh is PRESENT
+      with correct 0700 directory semantics. The 2025 attacker persistence
+      chain (cd ~ ; rm -rf .ssh && mkdir .ssh ; echo ... >> authorized_keys)
+      targets a directory that already exists here. Absence of ~/.ssh is
+      therefore NOT a candidate explanation for any behavioural gap.
+
+  - path: /root/.ssh/authorized_keys
+    observed: false
+    note: >
+      Absent by default; this is also true of stock Cowrie and of any freshly
+      imaged host. Not itself a defect.
+
+  - path: /tmp
+    observed: true
+    children: [.ICE-unix, .X11-unix]
+
+  - path: /var
+    observed: true
+    children: [backups, cache, lib, local, lock, log, mail, opt, run, spool, tmp]
+
+  - path: /var/backups
+    observed: true
+    children: []
+    note: directory exists, is empty
+
+  - path: /opt
+    observed: true
+    children: []
+
+  - path: /etc/passwd
+    observed: true
+    attacker_reachable: true
+    users_listed: [root, daemon, www-data, mysql, admin]
+    inconsistency: >
+      /etc/passwd declares admin:x:1000:1000:Admin User:/home/admin:/bin/bash
+      but /home/admin does not exist in the namespace. An attacker who reads
+      /etc/passwd and then lists /home sees a contradiction. This is an
+      additional fingerprint beyond the unreachable passwords.txt.
+
+shell_emulation_fidelity:
+  # Observed deviations from real GNU coreutils behaviour. Each is an
+  # attacker-detectable tell, independent of filesystem content.
+  - probe: "cd ~"
+    result: "OK (cwd -> /root)"
+  - probe: "ls -la ~/.ssh"
+    result: "OK (tilde expanded when followed by /)"
+  - probe: "ls -ld ~"
+    result: "ls: cannot access /root/~: No such file or directory"
+    defect: "bare ~ is NOT expanded as an argument; it is joined to cwd"
+  - probe: "ls -ld ~/.ssh"
+    result: "(empty output, no error)"
+    defect: >
+      "-d" flag unsupported; silently returns nothing instead of printing
+      the directory entry itself.
+  - probe: "ps"
+    result: "(blank)"
+    defect: >
+      P0B1 fixed the CRASH ([shell] processes now resolves to cmdoutput.json,
+      which parses and contains 73 ps entries), but the command still renders
+      no rows. Crash-fixed is not output-correct. Recorded as a NEW open
+      observation, distinct from P0B1.

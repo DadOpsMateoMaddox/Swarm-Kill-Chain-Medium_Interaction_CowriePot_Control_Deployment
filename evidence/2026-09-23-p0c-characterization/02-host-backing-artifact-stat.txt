@@ -1,0 +1,42 @@
+# P0C-C  backing artifact metadata (read-only).
+
+File: ‘/opt/cowrie/share/cowrie/fs.pickle’
+  Size: 1249033   	Blocks: 2440       IO Block: 4096   regular file
+Device: 10301h/66305d	Inode: 5187359     Links: 1
+Access: (0640/-rw-r-----)  Uid: (    0/    root)   Gid: (  992/  cowrie)
+Access: 2026-09-16 20:07:11.042001069 +0000
+Modify: 2026-09-16 20:07:11.050001158 +0000
+Change: 2026-09-16 20:07:34.822293260 +0000
+ Birth: -
+
+# Contents layer (honeyfs) -- supplies BODIES only, never namespace entries.
+/opt/cowrie/honeyfs root:cowrie 750
+/opt/cowrie/honeyfs/home root:root 755
+
+# honeyfs tree (path mode)
+/opt/cowrie/honeyfs 750
+/opt/cowrie/honeyfs/etc 755
+/opt/cowrie/honeyfs/etc/group 640
+/opt/cowrie/honeyfs/etc/host.conf 640
+/opt/cowrie/honeyfs/etc/hostname 640
+/opt/cowrie/honeyfs/etc/hosts 640
+/opt/cowrie/honeyfs/etc/inittab 640
+/opt/cowrie/honeyfs/etc/issue 640
+/opt/cowrie/honeyfs/etc/motd 640
+/opt/cowrie/honeyfs/etc/passwd 644
+/opt/cowrie/honeyfs/etc/resolv.conf 640
+/opt/cowrie/honeyfs/etc/shadow 640
+/opt/cowrie/honeyfs/home 755
+/opt/cowrie/honeyfs/home/admin 755
+/opt/cowrie/honeyfs/home/admin/passwords.txt 644
+/opt/cowrie/honeyfs/opt 755
+/opt/cowrie/honeyfs/proc 750
+/opt/cowrie/honeyfs/proc/cpuinfo 640
+/opt/cowrie/honeyfs/proc/meminfo 640
+/opt/cowrie/honeyfs/proc/modules 640
+/opt/cowrie/honeyfs/proc/mounts 640
+/opt/cowrie/honeyfs/proc/net 750
+/opt/cowrie/honeyfs/proc/net/arp 640
+/opt/cowrie/honeyfs/proc/version 640
+/opt/cowrie/honeyfs/var 755
+/opt/cowrie/honeyfs/var/www 755
