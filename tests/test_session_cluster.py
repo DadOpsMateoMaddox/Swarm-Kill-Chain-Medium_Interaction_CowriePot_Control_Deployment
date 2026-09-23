@@ -12,6 +12,7 @@ from session_cluster import (  # noqa: E402
     SessionClusterManager,
     build_session_summary_payload,
     sanitize_display,
+    _format_duration,
 )
 
 
@@ -166,6 +167,43 @@ class SummaryPayloadTests(unittest.TestCase):
         payload = build_session_summary_payload(expired[0], enrichment=None)
         fields_by_name = {field["name"]: field["value"] for field in payload["embeds"][0]["fields"]}
         self.assertIn("No successful login", fields_by_name["Authentication"])
+
+    def test_sub_second_duration_is_not_rounded_to_zero(self):
+        """Regression: real observed sessions (2026-09-22/23 live traffic)
+        had durations of 1.79ms-249.29ms, all of which rendered as
+        "Duration: 0s" before this fix -- silently discarding exactly the
+        sub-second timing precision that makes this telemetry
+        research-grade."""
+        manager = SessionClusterManager()
+        manager.observe(_event("cowrie.session.connect"), now=0.0)
+        expired = manager.flush_expired(now=1000.0)
+        cluster = expired[0]
+        cluster.last_activity_at = cluster.created_at + 0.00179  # 1.79ms, real observed value
+        description = build_session_summary_payload(cluster, enrichment=None)["embeds"][0]["description"]
+        self.assertIn("Duration: 1.79ms", description)
+        self.assertNotIn("Duration: 0s", description)
+
+    def test_format_duration_matrix(self):
+        # Every value here is a real duration observed in live H2 traffic
+        # (2026-09-22/23), except the >=1s cases which exercise the
+        # existing whole-second branch.
+        cases = [
+            (0.00179, "1.79ms"),
+            (0.00201, "2.01ms"),
+            (0.09408, "94.08ms"),
+            (0.20586, "205.86ms"),
+            (0.24929, "249.29ms"),
+            (0.13107, "131.07ms"),
+            (0.23158, "231.58ms"),
+            (0.0, "0.00ms"),
+            (0.9999, "999.90ms"),
+            (1.0, "1s"),
+            (1.5, "1s"),
+            (90.0, "90s"),
+        ]
+        for seconds, expected in cases:
+            with self.subTest(seconds=seconds):
+                self.assertEqual(_format_duration(seconds), expected)
 
     def _embed_total_size(self, embed):
         total = len(embed.get("title", "")) + len(embed.get("description", ""))

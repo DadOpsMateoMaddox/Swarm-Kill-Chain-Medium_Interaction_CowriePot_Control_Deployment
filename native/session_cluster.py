@@ -346,6 +346,18 @@ def _format_shodan(envelope: Optional[Dict[str, Any]]) -> str:
     )
 
 
+def _format_duration(seconds: float) -> str:
+    """Sub-second sessions are common (a single scripted probe, one failed
+    auth attempt) and are themselves research-grade telemetry -- rounding
+    them to "0s" silently discards exactly the timing precision an analyst
+    would want. Millisecond precision below one second; whole seconds at
+    or above it, where sub-second precision stops being meaningful for a
+    multi-second/minute interactive session."""
+    if seconds < 1.0:
+        return f"{seconds * 1000:.2f}ms"
+    return f"{int(seconds)}s"
+
+
 def build_session_summary_payload(
     cluster: SessionCluster,
     enrichment: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -387,7 +399,7 @@ def build_session_summary_payload(
     description = (
         f"IP: `{sanitize_display(cluster.src_ip, 64)}`\n"
         f"Session: `{sanitize_display(cluster.session_id or 'n/a', 64)}`\n"
-        f"Duration: {int(cluster.duration_seconds())}s\n"
+        f"Duration: {_format_duration(cluster.duration_seconds())}\n"
         f"Raw Events: {cluster.raw_event_count}\n"
         f"First Seen: {cluster.first_seen_iso or 'unknown'}\n"
         f"Last Seen: {cluster.last_seen_iso or 'unknown'}"
