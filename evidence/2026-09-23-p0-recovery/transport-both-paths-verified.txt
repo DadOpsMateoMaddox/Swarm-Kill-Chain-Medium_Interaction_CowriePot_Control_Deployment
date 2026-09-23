@@ -1,0 +1,149 @@
+BACKUP=/opt/cowrie/etc/p0b-backup-20260923T074252Z/cowrie.cfg
+BEFORE: 33:processes = 5
+AFTER:  33:processes = /opt/cowrie/share/cowrie/cmdoutput.json
+--- diff vs backup (must be exactly one line) ---
+33c33
+< processes = 5
+---
+> processes = /opt/cowrie/share/cowrie/cmdoutput.json
+=== 1. SERVICE HEALTH ===
+ACTIVE=active
+MainPID=13861
+ExecMainStatus=0
+ActiveEnterTimestamp=Wed 2026-09-23 07:42:52 UTC
+LISTEN 0      50           0.0.0.0:2222      0.0.0.0:*    users:(("twistd",pid=13861,fd=8))
+=== 2. NO STARTUP/RUNTIME FAILURE ===
+CLEAN_NO_FAILURES
+=== TRANSPORT ED25519 (forced HostKeyAlgorithms=ssh-ed25519) ===
+EXIT=255
+debug1: kex: host key algorithm: ssh-ed25519
+
+debug1: Server host key: ssh-ed25519 SHA256:E4D4gLIMwlICH7V3Ve2HnqJbGJXENKaJ+e4kPPiWNi4
+
+Authenticated to 127.0.0.1 ([127.0.0.1]:2222).
+
+exec request failed on channel 0
+
+STDOUT_FROM_HONEYPOT:
+exec request failed on channel 0
+
+
+=== TRANSPORT RSA (forced HostKeyAlgorithms=ssh-rsa) ===
+EXIT=255
+debug1: kex: host key algorithm: ssh-rsa
+
+debug1: Server host key: ssh-rsa SHA256:3+mzqUmTTgvGHegq1zuEgt14JQjY4fFF5WVvo6A+/8I
+
+Authenticated to 127.0.0.1 ([127.0.0.1]:2222).
+
+exec request failed on channel 0
+
+STDOUT_FROM_HONEYPOT:
+exec request failed on channel 0
+
+
+=== BEHAVIORAL PROBE (historical surface) ===
+BEHAVIORAL_EXIT=255
+=== SERVER-SIDE TELEMETRY (127.0.0.1 sessions, last 5 min) ===
+session f5b3a309971c
+    cowrie.session.connect 
+    cowrie.client.version 
+    cowrie.client.kex 
+    cowrie.login.success  user='root'
+    cowrie.client.var 
+    cowrie.session.closed  dur=0.104
+session 5fd0e8d14218
+    cowrie.session.connect 
+    cowrie.client.version 
+    cowrie.client.kex 
+    cowrie.login.success  user='root'
+    cowrie.client.var 
+    cowrie.session.closed  dur=0.060
+session a278864fab6d
+    cowrie.session.connect 
+    cowrie.client.version 
+    cowrie.client.kex 
+    cowrie.login.success  user='root'
+    cowrie.client.var 
+    cowrie.session.closed  dur=0.094
+session 5842dde7dd2c
+    cowrie.session.connect 
+    cowrie.client.version 
+    cowrie.client.kex 
+    cowrie.login.success  user='root'
+    cowrie.client.var 
+    cowrie.session.closed  dur=0.094
+
+--- STDERR ---
+
+
+=== NEGOTIATED ALGORITHM CAPTURE ===
+===== CAN THE SHELL BACKEND EVEN LOAD? (fs.pickle) =====
+FS_PICKLE_LOAD=OK  type=list  top_level_entries=9
+ROOT_NAME='/'  ROOT_TYPE=1
+ROOT_CHILD_COUNT=23
+TOP_DIRS=['bin', 'boot', 'dev', 'etc', 'home', 'initrd.img', 'lib', 'lost+found', 'media', 'mnt', 'opt', 'proc', 'root', 'run', 'sbin', 'selinux', 'srv', 'sys', 'test2', 'tmp', 'usr', 'var', 'vmlinuz']
+HOME_CHILDREN=['phil']
+   /home/phil children=['.bash_logout', '.bashrc', '.profile']
+
+===== TRANSPORT PATHS WITH NEGOTIATED ALG CAPTURE =====
+----- PATH ED25519 requested=ssh-ed25519 -----
+EXIT=255
+debug1: kex: host key algorithm: ssh-ed25519
+
+debug1: Server host key: ssh-ed25519 SHA256:E4D4gLIMwlICH7V3Ve2HnqJbGJXENKaJ+e4kPPiWNi4
+
+Authenticated to 127.0.0.1 ([127.0.0.1]:2222).
+
+exec request failed on channel 0
+
+
+----- PATH RSA requested=+ssh-rsa -----
+EXIT=255
+debug1: kex: host key algorithm: ecdsa-sha2-nistp256
+
+debug1: Server host key: ecdsa-sha2-nistp256 SHA256:BWrwmLz5XoHhrBRR8lr4FO7BAM3vAsx2opL2D7k4SNw
+
+Authenticated to 127.0.0.1 ([127.0.0.1]:2222).
+
+exec request failed on channel 0
+
+
+===== COWRIE JOURNAL, CORRECT TIME FORMAT =====
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,3,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,3,127.0.0.1] Initialized emulated server as architecture: linux-x64-lsb
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [cowrie.ssh.connection.CowrieSSHConnection#debug] got channel b'session' request
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [cowrie.ssh.session.HoneyPotSSHSession#info] channel open
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,3,127.0.0.1] request_env: LANG=en_US.UTF-8
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,3,127.0.0.1] Unhandled Error
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: Traceback (most recent call last):
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/src/cowrie/ssh/connection.py", line 62, in ssh_CHANNEL_REQUEST
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/channel.py", line 162, in requestReceived
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/session.py", line 93, in request_exec
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/src/cowrie/shell/session.py", line 49, in __init__
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/src/cowrie/shell/server.py", line 83, in initFileSystem
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/src/cowrie/shell/server.py", line 72, in getCommandOutput
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: builtins.FileNotFoundError: [Errno 2] No such file or directory: '5'
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,3,127.0.0.1] avatar root logging out
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,3,127.0.0.1] Connection lost after 0 seconds
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [cowrie.ssh.factory.CowrieSSHFactory] New connection: 127.0.0.1:46734 (127.0.0.1:2222) [session: f5b3a309971c]
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,4,127.0.0.1] Remote SSH version: SSH-2.0-OpenSSH_7.4
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,4,127.0.0.1] SSH client hassh fingerprint: 41ad223a9005f59c1bd3eee3cef3cab0
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,4,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,4,127.0.0.1] Initialized emulated server as architecture: linux-x64-lsb
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [cowrie.ssh.connection.CowrieSSHConnection#debug] got channel b'session' request
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [cowrie.ssh.session.HoneyPotSSHSession#info] channel open
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,4,127.0.0.1] request_env: LANG=en_US.UTF-8
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,4,127.0.0.1] Unhandled Error
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: Traceback (most recent call last):
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/src/cowrie/ssh/connection.py", line 62, in ssh_CHANNEL_REQUEST
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/channel.py", line 162, in requestReceived
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/session.py", line 93, in request_exec
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/src/cowrie/shell/session.py", line 49, in __init__
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/src/cowrie/shell/server.py", line 83, in initFileSystem
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/src/cowrie/shell/server.py", line 72, in getCommandOutput
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: builtins.FileNotFoundError: [Errno 2] No such file or directory: '5'
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,4,127.0.0.1] avatar root logging out
+Sep 23 07:37:54 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,4,127.0.0.1] Connection lost after 0 seconds
+
+--- STDERR ---

@@ -1,0 +1,13 @@
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [cowrie.ssh.factory.CowrieSSHFactory] New connection: 127.0.0.1:42454 (127.0.0.1:2222) [session: 7467e75c8448]
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [HoneyPotSSHTransport,3,127.0.0.1] Remote SSH version: SSH-2.0-OpenSSH_7.4
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [HoneyPotSSHTransport,3,127.0.0.1] SSH client hassh fingerprint: 41ad223a9005f59c1bd3eee3cef3cab0
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [HoneyPotSSHTransport,3,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [HoneyPotSSHTransport,3,127.0.0.1] Initialized emulated server as architecture: linux-x64-lsb
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,3,127.0.0.1] request_env: LANG=en_US.UTF-8
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [twisted.conch.ssh.session#info] Executing command "b'whoami'"
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,3,127.0.0.1] CMD: whoami
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,3,127.0.0.1] Command found: whoami
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [HoneyPotSSHTransport,3,127.0.0.1] Closing TTY Log: var/lib/cowrie/tty/f25297859cf0a70af5c053a5464a5fa647a35ceee1d91397331903846d79ffc1 after 0 seconds
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [HoneyPotSSHTransport,3,127.0.0.1] Got remote error, code 11 reason: b'disconnected by user'
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [HoneyPotSSHTransport,3,127.0.0.1] avatar root logging out
+2026-09-23T07:49:24+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [HoneyPotSSHTransport,3,127.0.0.1] Connection lost after 0 seconds

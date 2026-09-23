@@ -1,0 +1,192 @@
+STATUS=Success
+
+===== DEPLOYED cowrie.cfg (authoritative, incl. appended overrides) =====
+; PatriotPot 2025 - recovered candidate cowrie.cfg
+;
+; PROVENANCE: extracted from the heredoc in
+;   02-Deployment-Scripts/fix-cowrie-backend.sh
+; recovered from git blob b63431c85a1b9ae726b665ef3605de748e5b8a41 - a file DELETED
+; from the repository and present in no working tree, ZIP, or tarball.
+;
+; CONFIDENCE: RECOVERED_CANDIDATE. Exact live cfg provenance remains unverified.
+; Behavioural values are independently supported by attacker telemetry:
+;   backend=shell        -> 9,409 cowrie.command.input events in the capture
+;   listen 2222          -> scanner probe "MGLNDD_44.218.220.47_2222" in the capture
+;
+; The deployment copies this candidate and appends only an explicit
+; [telnet] enabled=false pre-exposure safety override.
+
+[honeypot]
+hostname = gmu-server
+log_path = /opt/cowrie/var/log/cowrie
+download_path = /opt/cowrie/var/lib/cowrie/downloads
+contents_path = /opt/cowrie/honeyfs
+txtcmds_path = /opt/cowrie/share/cowrie/txtcmds
+backend = shell
+
+[ssh]
+rsa_public_key = /opt/cowrie/etc/ssh_host_rsa_key.pub
+rsa_private_key = /opt/cowrie/etc/ssh_host_rsa_key
+version = SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2
+listen_endpoints = tcp:2222:interface=0.0.0.0
+
+[shell]
+processes = 5
+max_commands = 50
+filesystem = /opt/cowrie/share/cowrie/fs.pickle
+
+[backend_pool]
+pool_only = false
+
+[backend_pool.pool_0]
+backend = shell
+
+; 2026 pre-exposure safety override: TCP/2223 is deliberately disabled.
+[telnet]
+enabled = false
+===== cowrie.log size / tail =====
+-rw-r----- 1 cowrie cowrie 0 Sep 19 22:08 /opt/cowrie/var/log/cowrie/cowrie.log
+===== journalctl -u cowrie: errors/tracebacks since last restart =====
+Sep 19 22:19:33 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-19T22:19:33+0000 [HoneyPotSSHTransport,1,73.251.168.180] login attempt [b'guest'/b'AUTHPARITY-OPERATOR-VALIDATION-20260919-expect-denial'] failed
+Sep 19 22:19:34 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-19T22:19:34+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'guest' failed auth b'password'
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-20T20:22:56+0000 [HoneyPotSSHTransport,13,216.180.246.35] Unhandled Error
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: Traceback (most recent call last):
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: --- <exception caught here> ---
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: raise BadSignatureAlgorithmError(
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: twisted.conch.ssh.keys.BadSignatureAlgorithmError: public key signature algorithm b'ssh-rsa' is not defined for Ed25519 keys
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-22T13:18:13+0000 [HoneyPotSSHTransport,59,94.231.206.3] Unhandled Error
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: Traceback (most recent call last):
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: --- <exception caught here> ---
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: raise BadSignatureAlgorithmError(
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: twisted.conch.ssh.keys.BadSignatureAlgorithmError: public key signature algorithm b'ssh-rsa' is not defined for Ed25519 keys
+Sep 22 16:56:33 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-22T16:56:33+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#info] Disconnecting with error, code 2
+===== journalctl -u cowrie: last 40 lines raw =====
+-- Logs begin at Wed 2026-09-16 20:03:34 UTC, end at Wed 2026-09-23 07:15:52 UTC. --
+Sep 22 23:40:05 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-22T23:40:05+0000 [HoneyPotSSHTransport,63,205.210.31.52] Connection lost after 0 seconds
+Sep 23 01:51:03 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:51:03+0000 [cowrie.ssh.factory.CowrieSSHFactory] New connection: 194.187.179.235:29072 (10.0.1.246:2222) [session: 2970ad1ae582]
+Sep 23 01:51:03 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:51:03+0000 [HoneyPotSSHTransport,64,194.187.179.235] Remote SSH version: SSH-2.0-Go
+Sep 23 01:51:03 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:51:03+0000 [HoneyPotSSHTransport,64,194.187.179.235] SSH client hassh fingerprint: 084386fa7ae5039bcf6f07298a05a227
+Sep 23 01:51:03 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:51:03+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] kex alg=b'curve25519-sha256@libssh.org' key alg=b'ecdsa-sha2-nistp256'
+Sep 23 01:51:03 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:51:03+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] outgoing: b'aes128-ctr' b'hmac-sha1' b'none'
+Sep 23 01:51:03 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:51:03+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] incoming: b'aes128-ctr' b'hmac-sha1' b'none'
+Sep 23 01:51:03 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:51:03+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] NEW KEYS
+Sep 23 01:51:03 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:51:03+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] starting service b'ssh-userauth'
+Sep 23 01:51:03 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:51:03+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'' trying auth b'none'
+Sep 23 01:51:03 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:51:03+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#info] connection lost
+Sep 23 01:51:03 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:51:03+0000 [HoneyPotSSHTransport,64,194.187.179.235] Connection lost after 0 seconds
+Sep 23 01:57:28 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:57:28+0000 [cowrie.ssh.factory.CowrieSSHFactory] New connection: 159.203.189.200:42536 (10.0.1.246:2222) [session: f456e7ff0028]
+Sep 23 01:57:28 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:57:28+0000 [HoneyPotSSHTransport,65,159.203.189.200] Remote SSH version: SSH-2.0-Go
+Sep 23 01:57:28 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:57:28+0000 [HoneyPotSSHTransport,65,159.203.189.200] SSH client hassh fingerprint: e54ef3ec27fe1fea7ab64d3fa05359fd
+Sep 23 01:57:28 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:57:28+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] kex alg=b'curve25519-sha256' key alg=b'ssh-ed25519'
+Sep 23 01:57:28 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:57:28+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] outgoing: b'aes128-ctr' b'hmac-sha1' b'none'
+Sep 23 01:57:28 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:57:28+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] incoming: b'aes128-ctr' b'hmac-sha1' b'none'
+Sep 23 01:57:28 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:57:28+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] NEW KEYS
+Sep 23 01:57:28 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:57:28+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] starting service b'ssh-userauth'
+Sep 23 01:57:28 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:57:28+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'' trying auth b'none'
+Sep 23 01:57:28 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:57:28+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#info] connection lost
+Sep 23 01:57:28 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T01:57:28+0000 [HoneyPotSSHTransport,65,159.203.189.200] Connection lost after 0 seconds
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [cowrie.ssh.factory.CowrieSSHFactory] New connection: 40.124.85.15:49298 (10.0.1.246:2222) [session: 61fb87eed78b]
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [HoneyPotSSHTransport,66,40.124.85.15] Remote SSH version: SSH-2.0-Go
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [HoneyPotSSHTransport,66,40.124.85.15] SSH client hassh fingerprint: e54ef3ec27fe1fea7ab64d3fa05359fd
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] kex alg=b'curve25519-sha256' key alg=b'ssh-ed25519'
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] outgoing: b'aes128-ctr' b'hmac-sha1' b'none'
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] incoming: b'aes128-ctr' b'hmac-sha1' b'none'
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] NEW KEYS
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#info] connection lost
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [HoneyPotSSHTransport,66,40.124.85.15] Connection lost after 0 seconds
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [cowrie.ssh.factory.CowrieSSHFactory] New connection: 40.124.85.15:49314 (10.0.1.246:2222) [session: 900b1b5d2560]
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [HoneyPotSSHTransport,67,40.124.85.15] Remote SSH version: MGLNDD_13.217.73.134_2222
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [HoneyPotSSHTransport,67,40.124.85.15] Bad protocol version identification: b'MGLNDD_13.217.73.134_2222'
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#info] connection lost
+Sep 23 05:51:20 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T05:51:20+0000 [HoneyPotSSHTransport,67,40.124.85.15] Connection lost after 0 seconds
+Sep 23 06:58:29 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T06:58:29+0000 [cowrie.ssh.factory.CowrieSSHFactory] New connection: 69.5.169.94:47700 (10.0.1.246:2222) [session: 270ddeff35f2]
+Sep 23 06:58:29 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T06:58:29+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#info] connection lost
+Sep 23 06:58:29 ip-10-0-1-246.ec2.internal twistd[22742]: 2026-09-23T06:58:29+0000 [HoneyPotSSHTransport,68,69.5.169.94] Connection lost after 0 seconds
+===== fs.pickle =====
+-rw-r----- 1 root cowrie 1249033 Sep 16 20:07 /opt/cowrie/share/cowrie/fs.pickle
+06f0ed527bdc133b3fabca5def3db084b120bdf6b8e47736a85cd12e98b36da9  /opt/cowrie/share/cowrie/fs.pickle
+===== honeyfs tree =====
+/opt/cowrie/honeyfs
+/opt/cowrie/honeyfs/etc
+/opt/cowrie/honeyfs/etc/group
+/opt/cowrie/honeyfs/etc/host.conf
+/opt/cowrie/honeyfs/etc/hostname
+/opt/cowrie/honeyfs/etc/hosts
+/opt/cowrie/honeyfs/etc/inittab
+/opt/cowrie/honeyfs/etc/issue
+/opt/cowrie/honeyfs/etc/motd
+/opt/cowrie/honeyfs/etc/resolv.conf
+/opt/cowrie/honeyfs/etc/shadow
+/opt/cowrie/honeyfs/etc/passwd
+/opt/cowrie/honeyfs/proc
+/opt/cowrie/honeyfs/proc/cpuinfo
+/opt/cowrie/honeyfs/proc/meminfo
+/opt/cowrie/honeyfs/proc/modules
+/opt/cowrie/honeyfs/proc/mounts
+/opt/cowrie/honeyfs/proc/net
+/opt/cowrie/honeyfs/proc/net/arp
+/opt/cowrie/honeyfs/proc/version
+/opt/cowrie/honeyfs/home
+/opt/cowrie/honeyfs/home/admin
+/opt/cowrie/honeyfs/home/admin/passwords.txt
+/opt/cowrie/honeyfs/var
+/opt/cowrie/honeyfs/var/www
+/opt/cowrie/honeyfs/opt
+===== cowrie version =====
+2.5.0
+
+--- STDERR ---
+
+
+=== FULL TRACEBACK CONTEXT ===
+STATUS=Success
+
+===== host key files present =====
+-rw-------  1 cowrie cowrie   444 Sep 16 20:07 ssh_host_rsa_key
+-rw-r--r--  1 cowrie cowrie   123 Sep 16 20:07 ssh_host_rsa_key.pub
+===== ACTUAL key type of each (public half only, no private material) =====
+--- /opt/cowrie/etc/ssh_host_rsa_key.pub
+ssh-ed25519
+256 SHA256:E4D4gLIMwlICH7V3Ve2HnqJbGJXENKaJ+e4kPPiWNi4 cowrie-host-2026-control-rotated-20260915 (ED25519)
+===== private key header line ONLY (type identification, no key material) =====
+--- /opt/cowrie/etc/ssh_host_rsa_key
+[PEM header line elided: file began with the standard OpenSSH private-key
+ header, which is a format marker only. No key bytes were captured. Its
+ presence confirmed the file was an OpenSSH-format private key; the actual
+ TYPE (Ed25519) was established via 'ssh-keygen -y' deriving the public
+ half -- see key-fingerprints.txt.]
+===== does an ed25519-named key exist? =====
+NONE_NAMED_ED25519
+===== full traceback context for BadSignatureAlgorithmError =====
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/transport.py", line 781, in dispatchMessage
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: f(payload)
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/transport.py", line 1616, in ssh_KEX_DH_GEX_REQUEST_OLD
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: return self._ssh_KEXDH_INIT(packet)
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/transport.py", line 1585, in _ssh_KEXDH_INIT
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: + NS(privHostKey.sign(exchangeHash, signatureType=self.keyAlg)),
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/keys.py", line 1794, in sign
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: raise BadSignatureAlgorithmError(
+Sep 20 20:22:56 ip-10-0-1-246.ec2.internal twistd[22742]: twisted.conch.ssh.keys.BadSignatureAlgorithmError: public key signature algorithm b'ssh-rsa' is not defined for Ed25519 keys
+--
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/python/context.py", line 82, in callWithContext
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: return func(*args, **kw)
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: --- <exception caught here> ---
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/internet/posixbase.py", line 487, in _doReadOrWrite
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: why = selectable.doRead()
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/internet/tcp.py", line 248, in doRead
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: return self._dataReceived(data)
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/internet/tcp.py", line 253, in _dataReceived
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: rval = self.protocol.dataReceived(data)
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/src/cowrie/ssh/transport.py", line 146, in dataReceived
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: self.dispatchMessage(messageNum, packet[1:])
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/src/cowrie/ssh/transport.py", line 150, in dispatchMessage
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: transport.SSHServerTransport.dispatchMessage(self, message_num, payload)
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/transport.py", line 781, in dispatchMessage
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: f(payload)
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/transport.py", line 1690, in ssh_KEX_DH_GEX_INIT
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: + NS(privHostKey.sign(exchangeHash, signatureType=self.keyAlg)),
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/keys.py", line 1794, in sign
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: raise BadSignatureAlgorithmError(
+Sep 22 13:18:13 ip-10-0-1-246.ec2.internal twistd[22742]: twisted.conch.ssh.keys.BadSignatureAlgorithmError: public key signature algorithm b'ssh-rsa' is not defined for Ed25519 keys
+
+--- STDERR ---

@@ -1,0 +1,8 @@
+# Public-key fingerprints only. No private key material.
+# Ed25519 fingerprint preserved across repair (epoch-marker continuity).
+/opt/cowrie/etc/ssh_host_rsa_key.pub           3072 SHA256:3+mzqUmTTgvGHegq1zuEgt14JQjY4fFF5WVvo6A+/8I cowrie-host-2026-control-rsa (RSA)
+/opt/cowrie/etc/ssh_host_ed25519_key.pub       256 SHA256:E4D4gLIMwlICH7V3Ve2HnqJbGJXENKaJ+e4kPPiWNi4 cowrie-host-2026-control-rotated-20260915 (ED25519)
+
+# Private-half derived types (proves both halves match their slot):
+rsa_private_key derived                        3072 SHA256:3+mzqUmTTgvGHegq1zuEgt14JQjY4fFF5WVvo6A+/8I no comment (RSA)
+ed25519_private_key derived                    256 SHA256:E4D4gLIMwlICH7V3Ve2HnqJbGJXENKaJ+e4kPPiWNi4 no comment (ED25519)

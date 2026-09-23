@@ -1,0 +1,297 @@
+P0-RCA-01 — SSH HOST-KEY SLOT CORRUPTION
+=========================================
+Cowrie 2.5.0 parses three independent host-key slots (source truth,
+/opt/cowrie/src/cowrie/ssh/keys.py):
+    line 19-20  rsa_public_key      / rsa_private_key
+    line 67-68  ecdsa_public_key    / ecdsa_private_key
+    line 89-90  ed25519_public_key  / ed25519_private_key
+
+PRE-REPAIR STATE: only the rsa_* slot was configured, and the material in
+it was Ed25519 on BOTH halves (matching fingerprints). No ed25519_* config
+lines existed. No RSA key existed anywhere on the host.
+
+CAUSAL CHAIN:
+    client negotiates ssh-rsa host-key algorithm
+      -> Cowrie retrieves key from rsa_* slot
+      -> actual object is Ed25519
+      -> Twisted asks Ed25519 key to sign as ssh-rsa
+      -> BadSignatureAlgorithmError
+      -> transport dies during KEX, before shell creation
+
+Outcome depended entirely on which host-key algorithm the client chose,
+which is why some sessions survived and others died.
+
+--- CONFIRMATION CAPTURE (read-only) ---
+STATUS=Success
+
+===== CONFIGURED RSA PUBLIC KEY TYPE =====
+256 SHA256:E4D4gLIMwlICH7V3Ve2HnqJbGJXENKaJ+e4kPPiWNi4 cowrie-host-2026-control-rotated-20260915 (ED25519)
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPGge/1/gWk3tWaG0B2QVytKfWDVK/DMGMjVHW4LiKK/ cowrie-host-2026-control-rotated-20260915
+===== CONFIGURED RSA PRIVATE KEY DERIVED TYPE =====
+256 SHA256:E4D4gLIMwlICH7V3Ve2HnqJbGJXENKaJ+e4kPPiWNi4 no comment (ED25519)
+===== ED25519 FILES IF PRESENT =====
+(end)
+===== CONFIG KEY REFERENCES =====
+25:rsa_public_key = /opt/cowrie/etc/ssh_host_rsa_key.pub
+26:rsa_private_key = /opt/cowrie/etc/ssh_host_rsa_key
+27:version = SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2
+===== ALL FILES IN /opt/cowrie/etc =====
+total 64
+drwxr-xr-x  2 root   root     157 Sep 19 22:08 .
+drwxr-x--- 13 root   cowrie  4096 Sep 16 20:07 ..
+-rw-r--r--  1 root   root    1433 Sep 16 20:07 cowrie.cfg
+-rw-r-----  1 root   cowrie 35469 Sep 16 20:07 cowrie.cfg.dist
+-rw-r-----  1 root   cowrie    11 Sep 16 20:07 .gitignore
+-rw-------  1 cowrie cowrie   444 Sep 16 20:07 ssh_host_rsa_key
+-rw-r--r--  1 cowrie cowrie   123 Sep 16 20:07 ssh_host_rsa_key.pub
+-rw-r-----  1 root   cowrie   589 Sep 16 20:07 userdb.example
+-rw-r--r--  1 root   root      83 Sep 19 22:08 userdb.txt
+
+--- STDERR ---
+
+
+--- SOURCE TRUTH / DIST STANZA / PRE+POST CONFIG ---
+===== Cowrie 2.5.0 [ssh] section from cowrie.cfg.dist (UNTOUCHED stock file) =====
+[ssh]
+
+# Enable SSH support
+# (default: true)
+enabled = true
+
+
+# Public and private SSH key files. If these don't exist, they are created
+# automatically.
+rsa_public_key = ${honeypot:state_path}/ssh_host_rsa_key.pub
+rsa_private_key = ${honeypot:state_path}/ssh_host_rsa_key
+dsa_public_key = ${honeypot:state_path}/ssh_host_dsa_key.pub
+dsa_private_key = ${honeypot:state_path}/ssh_host_dsa_key
+ecdsa_public_key = ${honeypot:state_path}/ssh_host_ecdsa_key.pub
+ecdsa_private_key = ${honeypot:state_path}/ssh_host_ecdsa_key
+ed25519_public_key = ${honeypot:state_path}/ssh_host_ed25519_key.pub
+ed25519_private_key = ${honeypot:state_path}/ssh_host_ed25519_key
+
+# Public keys supported are: ssh-rsa, ssh-dss, ecdsa-sha2-nistp256, ssh-ed25519
+public_key_auth = ssh-rsa,ecdsa-sha2-nistp256,ssh-ed25519
+
+# SSH version string as present to the client.
+#
+# Version string MUST start with SSH-2.0- or SSH-1.99-
+#
+# Use these to disguise your honeypot from a simple SSH version scan
+# Examples:
+# SSH-2.0-OpenSSH_5.1p1 Debian-5
+# SSH-1.99-OpenSSH_4.3
+# SSH-1.99-OpenSSH_4.7
+# SSH-1.99-Sun_SSH_1.1
+# SSH-2.0-OpenSSH_4.2p1 Debian-7ubuntu3.1
+# SSH-2.0-OpenSSH_4.3
+# SSH-2.0-OpenSSH_4.6
+# SSH-2.0-OpenSSH_5.1p1 Debian-5
+# SSH-2.0-OpenSSH_5.1p1 FreeBSD-20080901
+# SSH-2.0-OpenSSH_5.3p1 Debian-3ubuntu5
+# SSH-2.0-OpenSSH_5.3p1 Debian-3ubuntu6
+# SSH-2.0-OpenSSH_5.3p1 Debian-3ubuntu7
+# SSH-2.0-OpenSSH_5.5p1 Debian-6
+# SSH-2.0-OpenSSH_5.5p1 Debian-6+squeeze1
+# SSH-2.0-OpenSSH_5.5p1 Debian-6+squeeze2
+# SSH-2.0-OpenSSH_5.8p2_hpn13v11 FreeBSD-20110503
+# SSH-2.0-OpenSSH_5.9p1 Debian-5ubuntu1
+# SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2
+# SSH-2.0-OpenSSH_5.9
+#
+# (default: "SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2")
+version = SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2
+
+# Cipher encryption algorithms to be used.
+#
+# MUST be supplied as a comma-separated string without
+# any spaces or newlines.
+#
+# Use ciphers to limit to more secure algorithms only
+# any spaces.
+# Supported ciphers:
+#
+# aes128-ctr
+# aes192-ctr
+# aes256-ctr
+# aes256-cbc
+# aes192-cbc
+# aes128-cbc
+# 3des-cbc
+# blowfish-cbc
+# cast128-cbc
+ciphers = aes128-ctr,aes192-ctr,aes256-ctr,aes256-cbc,aes192-cbc,aes128-cbc,3des-cbc,blowfish-cbc,cast128-cbc
+
+
+# MAC Algorithm to be used.
+#
+# MUST be supplied as a comma-separated string without
+# any spaces or newlines.
+#
+# hmac-sha1 and hmac-md5 are considered insecure now, and
+# instead MACs with higher number of bits should be used.
+#
+# Supported HMACs:
+# hmac-sha2-512
+# hmac-sha2-384
+# hmac-sha2-256
+# hmac-sha1
+# hmac-md5
+macs = hmac-sha2-512,hmac-sha2-384,hmac-sha2-56,hmac-sha1,hmac-md5
+
+
+# Compression Method to be used.
+#
+# MUST be supplied as a comma-separated string without
+# any spaces or newlines.
+#
+# Supported Compression Methods:
+# zlib@openssh.com
+# zlib
+# none
+compression = zlib@openssh.com,zlib,none
+
+# Endpoint to listen on for incoming SSH connections.
+# See https://twistedmatrix.com/documents/current/core/howto/endpoints.html#servers
+# (default: listen_endpoints = tcp:2222:interface=0.0.0.0)
+# (use systemd: endpoint for systemd activation)
+# listen_endpoints = systemd:domain=INET:index=0
+# For both IPv4 and IPv6: listen_endpoints = tcp6:2222:interface=\:\:
+# Listening on multiple endpoints is supported with a single space seperator
+# e.g listen_endpoints = "tcp:2222:interface=0.0.0.0 tcp:1022:interface=0.0.0.0" will result listening both on ports 2222 and 1022
+# use authbind for port numbers under 1024
+
+listen_endpoints = tcp:2222:interface=0.0.0.0
+
+# Enable the SFTP subsystem
+# (default: true)
+sftp_enabled = true
+
+
+# Enable SSH direct-tcpip forwarding
+# (default: true)
+forwarding = true
+
+
+# This enables redirecting forwarding requests to another address
+# Useful for forwarding protocols to other honeypots
+# (default: false)
+forward_redirect = false
+
+
+# Configure where to forward the data to.
+# forward_redirect_<portnumber> = <redirect ip>:<redirect port>
+
+# Redirect http/https
+# forward_redirect_80 = 127.0.0.1:8000
+# forward_redirect_443 = 127.0.0.1:8443
+
+# To record SMTP traffic, install an SMTP honeypoint.
+# (e.g https://github.com/awhitehatter/mailoney), run
+# python mailoney.py -s yahoo.com -t schizo_open_relay -p 12525
+# forward_redirect_25 = 127.0.0.1:12525
+# forward_redirect_587 = 127.0.0.1:12525
+
+
+# This enables tunneling forwarding requests to another address
+# Useful for forwarding protocols to a proxy like Squid
+# (default: false)
+forward_tunnel = false
+
+
+# Configure where to tunnel the data to.
+# forward_tunnel_<portnumber> = <tunnel ip>:<tunnel port>
+
+# Tunnel http/https
+# forward_tunnel_80 = 127.0.0.1:3128
+# forward_tunnel_443 = 127.0.0.1:3128
+
+
+# No authentication checking at all
+# enabling 'auth_none' will enable the ssh2 'auth_none' authentication method
+# this allows the requested user in without any verification at all
+#
+# (default: false)
+#auth_none_enabled = false
+
+
+# Configure keyboard-interactive login
+auth_keyboard_interactive_enabled = false
+
+# ============================================================================
+# Telnet Specific Options
+# ============================================================================
+[telnet]
+===== SOURCE TRUTH: directive names actually parsed by THIS build =====
+/opt/cowrie/src/cowrie/ssh/keys.py:19:    publicKeyFile: str = CowrieConfig.get("ssh", "rsa_public_key")
+/opt/cowrie/src/cowrie/ssh/keys.py:20:    privateKeyFile: str = CowrieConfig.get("ssh", "rsa_private_key")
+/opt/cowrie/src/cowrie/ssh/keys.py:67:    publicKeyFile: str = CowrieConfig.get("ssh", "ecdsa_public_key")
+/opt/cowrie/src/cowrie/ssh/keys.py:68:    privateKeyFile: str = CowrieConfig.get("ssh", "ecdsa_private_key")
+/opt/cowrie/src/cowrie/ssh/keys.py:89:    publicKeyFile: str = CowrieConfig.get("ssh", "ed25519_public_key")
+/opt/cowrie/src/cowrie/ssh/keys.py:90:    privateKeyFile: str = CowrieConfig.get("ssh", "ed25519_private_key")
+Binary file /opt/cowrie/src/cowrie/ssh/__pycache__/keys.cpython-38.pyc matches
+===== PRE-REPAIR deployed [ssh] section (from backup pre-image) =====
+[ssh]
+rsa_public_key = /opt/cowrie/etc/ssh_host_rsa_key.pub
+rsa_private_key = /opt/cowrie/etc/ssh_host_rsa_key
+version = SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2
+listen_endpoints = tcp:2222:interface=0.0.0.0
+
+[shell]
+===== POST-REPAIR deployed [ssh] section =====
+[ssh]
+rsa_public_key = /opt/cowrie/etc/ssh_host_rsa_key.pub
+rsa_private_key = /opt/cowrie/etc/ssh_host_rsa_key
+ed25519_public_key = /opt/cowrie/etc/ssh_host_ed25519_key.pub
+ed25519_private_key = /opt/cowrie/etc/ssh_host_ed25519_key
+version = SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2
+listen_endpoints = tcp:2222:interface=0.0.0.0
+
+[shell]
+===== Cowrie version evidence =====
+/opt/cowrie/src/cowrie/_version.py:__version__ = Version("cowrie", 2, 5, 0)
+/opt/cowrie/src/cowrie/_version.py:__all__: list[str] = ["__version__"]
+runtime_version= 2.5.0
+===== service state (confirming NOT yet restarted) =====
+MainPID=22742
+ActiveEnterTimestamp=Sat 2026-09-19 22:08:04 UTC
+
+--- STDERR ---
+
+
+--- REPAIR EXECUTION (fingerprint continuity preserved) ---
+BACKUP_DIR=/opt/cowrie/etc/p0-backup-20260923T072748Z
+--- original fingerprint (for continuity check) ---
+ORIGINAL_ED25519_FPR=SHA256:E4D4gLIMwlICH7V3Ve2HnqJbGJXENKaJ+e4kPPiWNi4
+ED25519_SLOT_FPR=SHA256:E4D4gLIMwlICH7V3Ve2HnqJbGJXENKaJ+e4kPPiWNi4
+ED25519_CONTINUITY=PRESERVED
+CONFIG_PATCHED=yes
+===== KEY TYPES AFTER REPAIR =====
+ssh_host_rsa_key.pub         3072 SHA256:3+mzqUmTTgvGHegq1zuEgt14JQjY4fFF5WVvo6A+/8I cowrie-host-2026-control-rsa (RSA)
+ssh_host_ed25519_key.pub     256 SHA256:E4D4gLIMwlICH7V3Ve2HnqJbGJXENKaJ+e4kPPiWNi4 cowrie-host-2026-control-rotated-20260915 (ED25519)
+===== PRIVATE KEY DERIVED TYPES =====
+rsa slot      3072 SHA256:3+mzqUmTTgvGHegq1zuEgt14JQjY4fFF5WVvo6A+/8I no comment (RSA)
+ed25519 slot  256 SHA256:E4D4gLIMwlICH7V3Ve2HnqJbGJXENKaJ+e4kPPiWNi4 no comment (ED25519)
+===== PERMISSIONS =====
+/opt/cowrie/etc/ssh_host_ed25519_key  owner=cowrie:cowrie  mode=600
+/opt/cowrie/etc/ssh_host_ed25519_key.pub  owner=cowrie:cowrie  mode=644
+/opt/cowrie/etc/ssh_host_rsa_key  owner=cowrie:cowrie  mode=600
+/opt/cowrie/etc/ssh_host_rsa_key.pub  owner=cowrie:cowrie  mode=644
+===== [ssh] SECTION OF LIVE CONFIG =====
+[ssh]
+rsa_public_key = /opt/cowrie/etc/ssh_host_rsa_key.pub
+rsa_private_key = /opt/cowrie/etc/ssh_host_rsa_key
+ed25519_public_key = /opt/cowrie/etc/ssh_host_ed25519_key.pub
+ed25519_private_key = /opt/cowrie/etc/ssh_host_ed25519_key
+version = SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2
+listen_endpoints = tcp:2222:interface=0.0.0.0
+
+[shell]
+processes = 5
+max_commands = 50
+filesystem = /opt/cowrie/share/cowrie/fs.pickle
+
+[backend_pool]
+===== NOT RESTARTED YET =====
+
+--- STDERR ---

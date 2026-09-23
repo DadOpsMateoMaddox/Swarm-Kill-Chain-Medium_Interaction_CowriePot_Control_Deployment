@@ -1,0 +1,22 @@
+# Cowrie runtime directory ownership/mode after P0B2 repair
+/opt/cowrie/var owner=cowrie:cowrie mode=750
+/opt/cowrie/var/log owner=cowrie:cowrie mode=750
+/opt/cowrie/var/log/cowrie owner=cowrie:cowrie mode=750
+/opt/cowrie/var/lib owner=cowrie:cowrie mode=750
+/opt/cowrie/var/lib/cowrie owner=cowrie:cowrie mode=750
+/opt/cowrie/var/lib/cowrie/tty owner=cowrie:cowrie mode=750
+/opt/cowrie/var/lib/cowrie/downloads owner=cowrie:cowrie mode=750
+/opt/cowrie/var/lib/cowrie/snapshots owner=root:cowrie mode=750
+
+# cowrie-user write tests:
+WRITABLE     /opt/cowrie/var/log/cowrie
+WRITABLE     /opt/cowrie/var/lib/cowrie
+WRITABLE     /opt/cowrie/var/lib/cowrie/tty
+WRITABLE     /opt/cowrie/var/lib/cowrie/downloads
+
+# ttylog artifacts produced by the successful validation session:
+total 8
+drwxr-x--- 2 cowrie cowrie  96 Sep 23 07:49 .
+drwxr-x--- 5 cowrie cowrie 185 Sep 16 20:07 ..
+-rw-r----- 1 cowrie cowrie 107 Sep 23 07:49 f25297859cf0a70af5c053a5464a5fa647a35ceee1d91397331903846d79ffc1
+-rw-r----- 1 root   cowrie   2 Sep 16 20:07 .gitignore

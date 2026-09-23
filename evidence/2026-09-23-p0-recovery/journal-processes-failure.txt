@@ -1,0 +1,130 @@
+LINES=448
+===== FAILING REQUEST LIFECYCLE =====
+116:2026-09-23T07:35:42+0000 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/session.py", line 93, in request_exec
+126:2026-09-23T07:35:42+0000 ip-10-0-1-246.ec2.internal twistd[13666]: builtins.FileNotFoundError: [Errno 2] No such file or directory: '5'
+130:2026-09-23T07:35:42+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:35:42+0000 [HoneyPotSSHTransport,1,127.0.0.1] Connection lost after 0 seconds
+141:2026-09-23T07:36:40+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:36:40+0000 [HoneyPotSSHTransport,2,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+146:2026-09-23T07:36:40+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:36:40+0000 [cowrie.ssh.session.HoneyPotSSHSession#info] channel open
+148:2026-09-23T07:36:40+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:36:40+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,2,127.0.0.1] request_env: LANG=en_US.UTF-8
+149:2026-09-23T07:36:40+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:36:40+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,2,127.0.0.1] Unhandled Error
+150:2026-09-23T07:36:40+0000 ip-10-0-1-246.ec2.internal twistd[13666]: Traceback (most recent call last):
+170:2026-09-23T07:36:40+0000 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/session.py", line 93, in request_exec
+180:2026-09-23T07:36:40+0000 ip-10-0-1-246.ec2.internal twistd[13666]: builtins.FileNotFoundError: [Errno 2] No such file or directory: '5'
+184:2026-09-23T07:36:40+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:36:40+0000 [HoneyPotSSHTransport,2,127.0.0.1] Connection lost after 0 seconds
+195:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,3,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+200:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [cowrie.ssh.session.HoneyPotSSHSession#info] channel open
+202:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,3,127.0.0.1] request_env: LANG=en_US.UTF-8
+203:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,3,127.0.0.1] Unhandled Error
+204:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: Traceback (most recent call last):
+224:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/session.py", line 93, in request_exec
+234:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: builtins.FileNotFoundError: [Errno 2] No such file or directory: '5'
+238:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,3,127.0.0.1] Connection lost after 0 seconds
+249:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,4,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+254:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [cowrie.ssh.session.HoneyPotSSHSession#info] channel open
+256:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,4,127.0.0.1] request_env: LANG=en_US.UTF-8
+257:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,4,127.0.0.1] Unhandled Error
+258:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: Traceback (most recent call last):
+278:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/session.py", line 93, in request_exec
+288:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: builtins.FileNotFoundError: [Errno 2] No such file or directory: '5'
+292:2026-09-23T07:37:54+0000 ip-10-0-1-246.ec2.internal twistd[13666]: 2026-09-23T07:37:54+0000 [HoneyPotSSHTransport,4,127.0.0.1] Connection lost after 0 seconds
+327:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,0,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+332:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.session.HoneyPotSSHSession#info] channel open
+334:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,0,127.0.0.1] request_env: LANG=en_US.UTF-8
+337:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: Traceback (most recent call last):
+347:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/session.py", line 98, in request_exec
+360:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,0,127.0.0.1] Connection lost after 0 seconds
+371:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,1,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+376:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.session.HoneyPotSSHSession#info] channel open
+378:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,1,127.0.0.1] request_env: LANG=en_US.UTF-8
+381:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: Traceback (most recent call last):
+391:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/session.py", line 98, in request_exec
+404:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,1,127.0.0.1] Connection lost after 0 seconds
+415:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+420:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.session.HoneyPotSSHSession#info] channel open
+422:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,2,127.0.0.1] request_env: LANG=en_US.UTF-8
+425:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: Traceback (most recent call last):
+435:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/session.py", line 98, in request_exec
+448:2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] Connection lost after 0 seconds
+===== FULL TAIL OF JOURNAL (unfiltered, last 60) =====
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: return f(data)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: --- <exception caught here> ---
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/session.py", line 98, in request_exec
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: self.session.execCommand(pp, f)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/src/cowrie/shell/session.py", line 76, in execCommand
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: self.protocol.makeConnection(processprotocol)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/internet/protocol.py", line 509, in makeConnection
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: self.connectionMade()
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/src/cowrie/insults/insults.py", line 69, in connectionMade
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: ttylog.ttylog_open(self.ttylogFile, self.startTime)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/src/cowrie/core/ttylog.py", line 27, in ttylog_open
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: with open(logfile, "ab") as f:
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: builtins.PermissionError: [Errno 13] Permission denied: 'var/lib/cowrie/tty/20260923-074258-a278864fab6d-0e.log'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,1,127.0.0.1] avatar root logging out
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#info] connection lost
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,1,127.0.0.1] Connection lost after 0 seconds
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.factory.CowrieSSHFactory] New connection: 127.0.0.1:50924 (127.0.0.1:2222) [session: 5842dde7dd2c]
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] Remote SSH version: SSH-2.0-OpenSSH_7.4
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] SSH client hassh fingerprint: 41ad223a9005f59c1bd3eee3cef3cab0
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] kex alg=b'curve25519-sha256' key alg=b'ssh-ed25519'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] outgoing: b'aes128-ctr' b'hmac-sha2-512' b'none'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] incoming: b'aes128-ctr' b'hmac-sha2-512' b'none'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] NEW KEYS
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] starting service b'ssh-userauth'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'root' trying auth b'none'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'root' trying auth b'password'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] Initialized emulated server as architecture: linux-x64-lsb
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'root' authenticated with b'password'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] starting service b'ssh-connection'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.connection.CowrieSSHConnection#debug] got channel b'session' request
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.session.HoneyPotSSHSession#info] channel open
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.connection.CowrieSSHConnection#debug] got global b'no-more-sessions@openssh.com' request
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,2,127.0.0.1] request_env: LANG=en_US.UTF-8
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [twisted.conch.ssh.session#info] Executing command "b'pwd; cd ~; ls -la; cd .ssh; ls -la; cat authorized_keys'"
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [twisted.conch.ssh.session#critical] Error executing command "b'pwd; cd ~; ls -la; cd .ssh; ls -la; cat authorized_keys'"
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: Traceback (most recent call last):
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/python/log.py", line 80, in callWithContext
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: return context.call({ILogContext: newCtx}, func, *args, **kw)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/python/context.py", line 117, in callWithContext
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: return self.currentContext().callWithContext(ctx, func, *args, **kw)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/python/context.py", line 82, in callWithContext
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: return func(*args, **kw)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/channel.py", line 162, in requestReceived
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: return f(data)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: --- <exception caught here> ---
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/conch/ssh/session.py", line 98, in request_exec
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: self.session.execCommand(pp, f)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/src/cowrie/shell/session.py", line 76, in execCommand
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: self.protocol.makeConnection(processprotocol)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/venv/lib/python3.8/site-packages/twisted/internet/protocol.py", line 509, in makeConnection
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: self.connectionMade()
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/src/cowrie/insults/insults.py", line 69, in connectionMade
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: ttylog.ttylog_open(self.ttylogFile, self.startTime)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/src/cowrie/core/ttylog.py", line 27, in ttylog_open
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: with open(logfile, "ab") as f:
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: builtins.PermissionError: [Errno 13] Permission denied: 'var/lib/cowrie/tty/20260923-074258-5842dde7dd2c-0e.log'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] avatar root logging out
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#info] connection lost
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] Connection lost after 0 seconds
+===== LIVE SHELL CONFIG =====
+[shell]
+processes = /opt/cowrie/share/cowrie/cmdoutput.json
+max_commands = 50
+filesystem = /opt/cowrie/share/cowrie/fs.pickle
+
+[backend_pool]
+===== BACKEND CONFIG =====
+[backend_pool]
+pool_only = false
+
+[backend_pool.pool_0]
+backend = shell
+
+; 2026 pre-exposure safety override: TCP/2223 is deliberately disabled.
+[telnet]
+enabled = false
+===== honeypot backend line =====
+22:backend = shell
+41:backend = shell
+
+--- STDERR ---

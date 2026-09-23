@@ -1,0 +1,83 @@
+===== COMPLETE FINAL TRACEBACK (tail 22) =====
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.factory.CowrieSSHFactory] New connection: 127.0.0.1:50924 (127.0.0.1:2222) [session: 5842dde7dd2c]
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] Remote SSH version: SSH-2.0-OpenSSH_7.4
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] SSH client hassh fingerprint: 41ad223a9005f59c1bd3eee3cef3cab0
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] kex alg=b'curve25519-sha256' key alg=b'ssh-ed25519'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] outgoing: b'aes128-ctr' b'hmac-sha2-512' b'none'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] incoming: b'aes128-ctr' b'hmac-sha2-512' b'none'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] NEW KEYS
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] starting service b'ssh-userauth'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'root' trying auth b'none'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'root' trying auth b'password'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] Initialized emulated server as architecture: linux-x64-lsb
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'root' authenticated with b'password'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] starting service b'ssh-connection'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.connection.CowrieSSHConnection#debug] got channel b'session' request
+--
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/src/cowrie/insults/insults.py", line 69, in connectionMade
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: ttylog.ttylog_open(self.ttylogFile, self.startTime)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/src/cowrie/core/ttylog.py", line 27, in ttylog_open
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: with open(logfile, "ab") as f:
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: builtins.PermissionError: [Errno 13] Permission denied: 'var/lib/cowrie/tty/20260923-074258-5842dde7dd2c-0e.log'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] avatar root logging out
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#info] connection lost
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] Connection lost after 0 seconds
+===== ttylog-related config (live) =====
+18:log_path = /opt/cowrie/var/log/cowrie
+19:download_path = /opt/cowrie/var/lib/cowrie/downloads
+===== ttylog defaults in dist =====
+96:ttylog = true
+100:ttylog_path = ${honeypot:state_path}/tty
+===== state_path / ttylog dir existence + perms =====
+total 20
+drwxr-x--- 5 cowrie cowrie 185 Sep 16 20:07 .
+drwxr-x--- 3 cowrie cowrie  20 Sep 16 20:07 ..
+drwxr-x--- 2 cowrie cowrie  24 Sep 16 20:07 downloads
+-rw-r----- 1 root   cowrie  28 Sep 16 20:07 .gitignore
+drwxr-x--- 2 root   cowrie  24 Sep 16 20:07 snapshots
+-rw-r----- 1 cowrie cowrie 227 Sep 16 20:07 ssh_host_ecdsa_key
+-rw-r----- 1 cowrie cowrie 160 Sep 16 20:07 ssh_host_ecdsa_key.pub
+-rw-r----- 1 cowrie cowrie 387 Sep 16 20:07 ssh_host_ed25519_key
+-rw-r----- 1 cowrie cowrie  80 Sep 16 20:07 ssh_host_ed25519_key.pub
+drwxr-x--- 2 root   cowrie  24 Sep 16 20:07 tty
+drwxr-x--- 2 root cowrie 24 Sep 16 20:07 /opt/cowrie/var/lib/cowrie/tty
+===== insults.py context =====
+    45	        insults.ServerProtocol.__init__(self, protocolFactory, *a, **kw)
+    46	
+    47	        if protocolFactory is protocol.HoneyPotExecProtocol:
+    48	            self.type = "e"  # Execcmd
+    49	        else:
+    50	            self.type = "i"  # Interactive
+    51	
+    52	    def getSessionId(self):
+    53	        transportId = self.transport.session.conn.transport.transportId
+    54	        channelId = self.transport.session.id
+    55	        return (transportId, channelId)
+    56	
+    57	    def connectionMade(self) -> None:
+    58	        transportId, channelId = self.getSessionId()
+    59	        self.startTime = time.time()
+    60	
+    61	        if self.ttylogEnabled:
+    62	            self.ttylogFile = "{}/{}-{}-{}{}.log".format(
+    63	                self.ttylogPath,
+    64	                time.strftime("%Y%m%d-%H%M%S"),
+    65	                transportId,
+    66	                channelId,
+    67	                self.type,
+    68	            )
+    69	            ttylog.ttylog_open(self.ttylogFile, self.startTime)
+    70	            self.ttylogOpen = True
+    71	            self.ttylogSize = 0
+    72	
+    73	        self.stdinlogFile = "{}/{}-{}-{}-stdin.log".format(
+    74	            self.downloadPath,
+    75	            time.strftime("%Y%m%d-%H%M%S"),
+    76	            transportId,
+    77	            channelId,
+    78	        )
+    79	
+    80	        if self.type == "e":
+
+--- STDERR ---

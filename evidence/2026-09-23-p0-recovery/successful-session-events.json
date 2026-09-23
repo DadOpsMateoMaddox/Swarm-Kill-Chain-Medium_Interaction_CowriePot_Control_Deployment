@@ -1,0 +1,148 @@
+{
+  "validation_session_id": "7467e75c8448",
+  "synthetic": true,
+  "marker_credential": "root / P0-VALIDATION-20260923",
+  "events": [
+    {
+      "eventid": "cowrie.session.connect",
+      "src_ip": "127.0.0.1",
+      "src_port": 42454,
+      "dst_ip": "127.0.0.1",
+      "dst_port": 2222,
+      "session": "7467e75c8448",
+      "protocol": "ssh",
+      "message": "New connection: 127.0.0.1:42454 (127.0.0.1:2222) [session: 7467e75c8448]",
+      "sensor": "ip-10-0-1-246.ec2.internal",
+      "timestamp": "2026-09-23T07:49:24.791856Z"
+    },
+    {
+      "eventid": "cowrie.client.version",
+      "version": "SSH-2.0-OpenSSH_7.4",
+      "message": "Remote SSH version: SSH-2.0-OpenSSH_7.4",
+      "sensor": "ip-10-0-1-246.ec2.internal",
+      "timestamp": "2026-09-23T07:49:24.792723Z",
+      "src_ip": "127.0.0.1",
+      "session": "7467e75c8448"
+    },
+    {
+      "eventid": "cowrie.client.kex",
+      "hassh": "41ad223a9005f59c1bd3eee3cef3cab0",
+      "hasshAlgorithms": "curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1,ext-info-c,kex-strict-c-v00@openssh.com;chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-cbc,aes192-cbc,aes256-cbc;umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha1-etm@openssh.com,umac-64@openssh.com,umac-128@openssh.com,hmac-sha2-256,hmac-sha2-512,hmac-sha1;none,zlib@openssh.com,zlib",
+      "kexAlgs": [
+        "curve25519-sha256",
+        "curve25519-sha256@libssh.org",
+        "ecdh-sha2-nistp256",
+        "ecdh-sha2-nistp384",
+        "ecdh-sha2-nistp521",
+        "diffie-hellman-group-exchange-sha256",
+        "diffie-hellman-group16-sha512",
+        "diffie-hellman-group18-sha512",
+        "diffie-hellman-group-exchange-sha1",
+        "diffie-hellman-group14-sha256",
+        "diffie-hellman-group14-sha1",
+        "diffie-hellman-group1-sha1",
+        "ext-info-c",
+        "kex-strict-c-v00@openssh.com"
+      ],
+      "keyAlgs": [
+        "ssh-ed25519"
+      ],
+      "encCS": [
+        "chacha20-poly1305@openssh.com",
+        "aes128-ctr",
+        "aes192-ctr",
+        "aes256-ctr",
+        "aes128-gcm@openssh.com",
+        "aes256-gcm@openssh.com",
+        "aes128-cbc",
+        "aes192-cbc",
+        "aes256-cbc"
+      ],
+      "macCS": [
+        "umac-64-etm@openssh.com",
+        "umac-128-etm@openssh.com",
+        "hmac-sha2-256-etm@openssh.com",
+        "hmac-sha2-512-etm@openssh.com",
+        "hmac-sha1-etm@openssh.com",
+        "umac-64@openssh.com",
+        "umac-128@openssh.com",
+        "hmac-sha2-256",
+        "hmac-sha2-512",
+        "hmac-sha1"
+      ],
+      "compCS": [
+        "none",
+        "zlib@openssh.com",
+        "zlib"
+      ],
+      "langCS": [
+        ""
+      ],
+      "message": "SSH client hassh fingerprint: 41ad223a9005f59c1bd3eee3cef3cab0",
+      "sensor": "ip-10-0-1-246.ec2.internal",
+      "timestamp": "2026-09-23T07:49:24.793847Z",
+      "src_ip": "127.0.0.1",
+      "session": "7467e75c8448"
+    },
+    {
+      "eventid": "cowrie.login.success",
+      "username": "root",
+      "password": "P0-VALIDATION-20260923",
+      "message": "login attempt [root/P0-VALIDATION-20260923] succeeded",
+      "sensor": "ip-10-0-1-246.ec2.internal",
+      "timestamp": "2026-09-23T07:49:24.808830Z",
+      "src_ip": "127.0.0.1",
+      "session": "7467e75c8448"
+    },
+    {
+      "eventid": "cowrie.client.var",
+      "name": "LANG",
+      "value": "en_US.UTF-8",
+      "message": "request_env: LANG=en_US.UTF-8",
+      "sensor": "ip-10-0-1-246.ec2.internal",
+      "timestamp": "2026-09-23T07:49:24.811379Z",
+      "src_ip": "127.0.0.1",
+      "session": "7467e75c8448"
+    },
+    {
+      "eventid": "cowrie.session.params",
+      "arch": "linux-x64-lsb",
+      "message": [],
+      "sensor": "ip-10-0-1-246.ec2.internal",
+      "timestamp": "2026-09-23T07:49:24.837827Z",
+      "src_ip": "127.0.0.1",
+      "session": "7467e75c8448"
+    },
+    {
+      "eventid": "cowrie.command.input",
+      "input": "whoami",
+      "message": "CMD: whoami",
+      "sensor": "ip-10-0-1-246.ec2.internal",
+      "timestamp": "2026-09-23T07:49:24.838490Z",
+      "src_ip": "127.0.0.1",
+      "session": "7467e75c8448"
+    },
+    {
+      "eventid": "cowrie.log.closed",
+      "ttylog": "var/lib/cowrie/tty/f25297859cf0a70af5c053a5464a5fa647a35ceee1d91397331903846d79ffc1",
+      "size": 5,
+      "shasum": "f25297859cf0a70af5c053a5464a5fa647a35ceee1d91397331903846d79ffc1",
+      "duplicate": false,
+      "duration": 0.003084897994995117,
+      "message": "Closing TTY Log: var/lib/cowrie/tty/f25297859cf0a70af5c053a5464a5fa647a35ceee1d91397331903846d79ffc1 after 0 seconds",
+      "sensor": "ip-10-0-1-246.ec2.internal",
+      "timestamp": "2026-09-23T07:49:24.840678Z",
+      "src_ip": "127.0.0.1",
+      "session": "7467e75c8448"
+    },
+    {
+      "eventid": "cowrie.session.closed",
+      "duration": 0.050597429275512695,
+      "message": "Connection lost after 0 seconds",
+      "sensor": "ip-10-0-1-246.ec2.internal",
+      "timestamp": "2026-09-23T07:49:24.843181Z",
+      "src_ip": "127.0.0.1",
+      "session": "7467e75c8448"
+    }
+  ]
+}

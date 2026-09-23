@@ -1,0 +1,211 @@
+P0-RCA-02 — INVALID [shell] processes CONFIGURATION
+===================================================
+Cowrie 2.5.0 treats [shell] processes as a JSON FILE PATH, not a count.
+
+    /opt/cowrie/src/cowrie/shell/server.py
+      def getCommandOutput(self, file):
+          with open(file, encoding="utf-8") as f:
+              cmdoutput = json.load(f)
+
+      def initFileSystem(self, home):
+          self.fs = fs.HoneyPotFilesystem(self.arch, home)
+          try:
+              self.process = self.getCommandOutput(
+                  CowrieConfig.get("shell", "processes")
+              )["command"]["ps"]
+          except NoOptionError:
+              self.process = None
+
+    cowrie.cfg.dist:
+      # File that contains output for the `ps` command.
+      # (default: share/cowrie/cmdoutput.json)
+      processes = share/cowrie/cmdoutput.json
+
+PRE-REPAIR: processes = 5   ->   open("5")   ->   FileNotFoundError
+
+Only NoOptionError is caught. FileNotFoundError propagates out of
+initFileSystem -> request_exec -> SSH_MSG_CHANNEL_FAILURE.
+
+Critically: initFileSystem runs on the FIRST shell/exec request, not at
+startup. Cowrie booted clean, listened, and authenticated normally; it
+only failed at the moment an attacker tried to act.
+
+REMEDIATION: processes = /opt/cowrie/share/cowrie/cmdoutput.json
+(absolute, to remove relative-path ambiguity; CWD is /opt/cowrie)
+
+--- SOURCE SEMANTICS CAPTURE ---
+===== server.py getCommandOutput / initFileSystem (lines 55-95) =====
+    hostname: str = CowrieConfig.get("honeypot", "hostname")
+
+    def __init__(self, realm: IRealm) -> None:
+        try:
+            arches = [
+                arch.strip() for arch in CowrieConfig.get("shell", "arch").split(",")
+            ]
+            self.arch = random.choice(arches)
+        except NoOptionError:
+            self.arch = "linux-x64-lsb"
+
+        log.msg(f"Initialized emulated server as architecture: {self.arch}")
+
+    def getCommandOutput(self, file):
+        """
+        Reads process output from JSON file.
+        """
+        with open(file, encoding="utf-8") as f:
+            cmdoutput = json.load(f)
+        return cmdoutput
+
+    def initFileSystem(self, home):
+        """
+        Do this so we can trigger it later. Not all sessions need file system
+        """
+        self.fs = fs.HoneyPotFilesystem(self.arch, home)
+
+        try:
+            self.process = self.getCommandOutput(
+                CowrieConfig.get("shell", "processes")
+            )["command"]["ps"]
+        except NoOptionError:
+            self.process = None
+===== source references to shell:processes =====
+/opt/cowrie/src/cowrie/shell/server.py:84:                CowrieConfig.get("shell", "processes")
+===== cowrie.cfg.dist [shell] section =====
+[shell]
+
+# File in the Python pickle format containing the virtual filesystem.
+#
+# This includes the filenames, paths, permissions for the Cowrie filesystem,
+# but not the file contents. This is created by the bin/createfs utility from
+# a real template linux installation.
+#
+# (default: fs.pickle)
+filesystem = ${honeypot:share_path}/fs.pickle
+
+
+# File that contains output for the `ps` command.
+#
+# (default: share/cowrie/cmdoutput.json)
+processes = share/cowrie/cmdoutput.json
+
+
+# Fake architectures/OS
+# When Cowrie receive a command like /bin/cat XXXX (where XXXX is an executable)
+# it replies with the content of a dummy executable (located in data_path/arch)
+# compiled for an architecture/OS/endian_mode
+# arch can be a comma separated list. When there are multiple elements, a random
+# is chosen at login time.
+# (default: linux-x64-lsb)
+
+arch = linux-x64-lsb
+
+# Here the list of supported OS-ARCH-ENDIANESS executables
+# bsd-aarch64-lsb:	    64-bit	LSB	ARM aarch64 version 1 (SYSV)
+# bsd-aarch64-msb:	    64-bit	MSB	ARM aarch64 version 1 (SYSV)
+# bsd-bfin-msb:		    32-bit	MSB	Analog Devices Blackfin	version	1 (SYSV)
+# bsd-mips64-lsb:		64-bit	LSB	MIPS MIPS-III version 1	(SYSV)
+# bsd-mips64-msb:		64-bit	MSB	MIPS MIPS-III version 1	(SYSV)
+# bsd-mips-lsb:		    32-bit	LSB	MIPS MIPS-I version 1 (FreeBSD)
+# bsd-mips-msb:		    32-bit	MSB	MIPS MIPS-I version 1 (FreeBSD)
+# bsd-powepc64-lsb:	    64-bit	MSB	64-bit PowerPC or cisco	7500 version 1 (FreeBSD)
+# bsd-powepc-msb:		32-bit	MSB	PowerPC	or cisco 4500 version 1	(FreeBSD)
+# bsd-riscv64-lsb:	    64-bit	LSB	UCB RISC-V version 1 (SYSV)
+# bsd-sparc64-msb:	    64-bit	MSB	SPARC V9 relaxed memory	ordering version 1 (FreeBSD)
+# bsd-sparc-msb:		32-bit	MSB	SPARC version 1	(SYSV) statically
+# bsd-x32-lsb:		    32-bit	LSB	Intel 80386 version 1 (FreeBSD)
+# bsd-x64-lsb:		    64-bit	LSB	x86-64 version 1 (FreeBSD)
+# linux-aarch64-lsb:	64-bit	LSB	ARM aarch64 version 1 (SYSV)
+# linux-aarch64-msb:	64-bit	MSB	ARM aarch64 version 1 (SYSV)
+# linux-alpha-lsb:	    64-bit	LSB	Alpha (unofficial) version 1 (SYSV)
+# linux-am33-lsb:		32-bit	LSB	Matsushita MN10300 version 1 (SYSV)
+# linux-arc-lsb:		32-bit	LSB	ARC Cores Tangent-A5 version 1 (SYSV)
+# linux-arc-msb:		32-bit	MSB	ARC Cores Tangent-A5 version 1 (SYSV)
+# linux-arm-lsb:		32-bit	LSB	ARM EABI5 version 1 (SYSV)
+# linux-arm-msb:		32-bit	MSB	ARM EABI5 version 1 (SYSV)
+# linux-avr32-lsb:	    32-bit	LSB	Atmel AVR 8-bit	version 1 (SYSV)
+# linux-bfin-lsb:		32-bit	LSB	Analog Devices Blackfin version	1 (SYSV)
+# linux-c6x-lsb:		32-bit	LSB	TI TMS320C6000 DSP family version 1
+# linux-c6x-msb:		32-bit	MSB	TI TMS320C6000 DSP family version 1
+# linux-cris-lsb:		32-bit	LSB	Axis cris version 1 (SYSV)
+# linux-frv-msb:		32-bit	MSB	Cygnus FRV (unofficial) version	1 (SYSV)
+# linux-h8300-msb:	    32-bit	MSB	Renesas	H8/300 version 1 (SYSV)
+# linux-hppa64-msb:	    64-bit	MSB	PA-RISC	02.00.00 (LP64) version	1
+# linux-hppa-msb:		32-bit	MSB	PA-RISC	*unknown arch 0xf* version 1 (GNU/Linux)
+# linux-ia64-lsb:		64-bit	LSB	IA-64 version 1	(SYSV)
+# linux-m32r-msb:		32-bit	MSB	Renesas	M32R version 1 (SYSV)
+# linux-m68k-msb:		32-bit	MSB	Motorola m68k 68020 version 1 (SYSV)
+# linux-microblaze-msb:	32-bit	MSB	Xilinx MicroBlaze 32-bit RISC version 1	(SYSV)
+# linux-mips64-lsb:	    64-bit	LSB	MIPS MIPS-III version 1	(SYSV)
+# linux-mips64-msb:	    64-bit	MSB	MIPS MIPS-III version 1	(SYSV)
+# linux-mips-lsb:		32-bit	LSB	MIPS MIPS-I version 1 (SYSV)
+# linux-mips-msb:		32-bit	MSB	MIPS MIPS-I version 1 (SYSV)
+# linux-mn10300-lsb:	32-bit	LSB	Matsushita MN10300 version 1 (SYSV)
+# linux-nios-lsb:		32-bit	LSB	Altera Nios II version 1 (SYSV)
+# linux-nios-msb:		32-bit	MSB	Altera Nios II version 1 (SYSV)
+# linux-powerpc64-lsb:	64-bit	LSB	64-bit PowerPC or cisco	7500 version 1 (SYSV)
+# linux-powerpc64-msb:	64-bit	MSB	64-bit PowerPC or cisco	7500 version 1 (SYSV)
+# linux-powerpc-lsb:	32-bit	LSB	PowerPC	or cisco 4500 version 1 (SYSV)
+# linux-powerpc-msb:	32-bit	MSB	PowerPC	or cisco 4500 version 1 (SYSV)
+# linux-riscv64-lsb:  	64-bit	LSB	UCB RISC-V version 1 (SYSV)
+# linux-s390x-msb:    	64-bit	MSB	IBM S/390 version 1 (SYSV)
+# linux-sh-lsb:	    	32-bit	LSB	Renesas	SH version 1 (SYSV)
+# linux-sh-msb:	    	32-bit	MSB	Renesas	SH version 1 (SYSV)
+# linux-sparc64-msb:  	64-bit	MSB	SPARC V9 relaxed memory	ordering version 1 (SYSV)
+# linux-sparc-msb:    	32-bit	MSB	SPARC version 1	(SYSV)
+# linux-tilegx64-lsb:	64-bit	LSB	Tilera TILE-Gx version 1 (SYSV)
+# linux-tilegx64-msb: 	64-bit	MSB	Tilera TILE-Gx version 1 (SYSV)
+# linux-tilegx-lsb:   	32-bit	LSB	Tilera TILE-Gx version 1 (SYSV)
+# linux-tilegx-msb:   	32-bit	MSB	Tilera TILE-Gx version 1 (SYSV)
+# linux-x64-lsb:	    64-bit	LSB	x86-64 version 1 (SYSV)
+# linux-x86-lsb:	    32-bit	LSB	Intel 80386 version 1 (SYSV)
+# linux-xtensa-msb:   	32-bit	MSB	Tensilica Xtensa version 1 (SYSV)
+# osx-x32-lsb:	    	32-bit	LSB Intel 80386
+# osx-x64-lsb:	    	64-bit	LSB	x86-64
+
+# arch = bsd-aarch64-lsb, bsd-aarch64-msb, bsd-bfin-msb, bsd-mips-lsb, bsd-mips-msb, bsd-mips64-lsb, bsd-mips64-msb, bsd-powepc-msb, bsd-powepc64-lsb, bsd-riscv64-lsb, bsd-sparc-msb, bsd-sparc64-msb, bsd-x32-lsb, bsd-x64-lsb, linux-aarch64-lsb, linux-aarch64-msb, linux-alpha-lsb, linux-am33-lsb, linux-arc-lsb, linux-arc-msb, linux-arm-lsb, linux-arm-msb, linux-avr32-lsb, linux-bfin-lsb, linux-c6x-lsb, linux-c6x-msb, linux-cris-lsb, linux-frv-msb, linux-h8300-msb, linux-hppa-msb, linux-hppa64-msb, linux-ia64-lsb, linux-m32r-msb, linux-m68k-msb, linux-microblaze-msb, linux-mips-lsb, linux-mips-msb, linux-mips64-lsb, linux-mips64-msb, linux-mn10300-lsb, linux-nios-lsb, linux-nios-msb, linux-powerpc-lsb, linux-powerpc-msb, linux-powerpc64-lsb, linux-powerpc64-msb, linux-riscv64-lsb, linux-s390x-msb, linux-sh-lsb, linux-sh-msb, linux-sparc-msb, linux-sparc64-msb, linux-tilegx-lsb, linux-tilegx-msb, linux-tilegx64-lsb, linux-tilegx64-msb, linux-x64-lsb, linux-x86-lsb, linux-xtensa-msb, osx-x32-lsb, osx-x64-lsb
+
+# Modify the response of '/bin/uname'
+# Default (uname -a): Linux <hostname> <kernel_version> <kernel_build_string> <hardware_platform> <operating system>
+kernel_version = 3.2.0-4-amd64
+kernel_build_string = #1 SMP Debian 3.2.68-1+deb7u1
+hardware_platform = x86_64
+operating_system = GNU/Linux
+
+# SSH Version as printed by "ssh -V" in shell emulation
+ssh_version = OpenSSH_7.9p1, OpenSSL 1.1.1a  20 Nov 2018
+
+
+# ============================================================================
+# SSH Specific Options
+# ============================================================================
+[ssh]
+===== what canned-output files ship with cowrie? =====
+total 1248
+drwxr-x--- 5 root cowrie     110 Sep 16 20:07 .
+drwxr-x--- 3 root cowrie      38 Sep 16 20:07 ..
+drwxr-x--- 3 root cowrie    4096 Sep 16 20:07 arch
+-rw-r----- 1 root cowrie   21102 Sep 16 20:07 cmdoutput.json
+-rw-r----- 1 root cowrie 1249033 Sep 16 20:07 fs.pickle
+-rw-r----- 1 root cowrie       0 Sep 16 20:07 .gitignore
+drwxr-x--- 2 root cowrie     134 Sep 16 20:07 pool_configs
+drwxr-x--- 4 root cowrie      28 Sep 16 20:07 txtcmds
+
+
+--- TARGET FILE VALIDATION (structure Cowrie indexes) ---
+===== LOCATE cmdoutput.json =====
+/opt/cowrie/share/cowrie/cmdoutput.json
+===== cowrie process CWD (what a relative path would resolve against) =====
+/opt/cowrie
+===== share_path / state_path from dist defaults =====
+47:share_path = share/cowrie
+53:state_path = var/lib/cowrie
+===== VALIDATE STRUCTURE Cowrie actually indexes: ["command"]["ps"] =====
+--- /opt/cowrie/share/cowrie/cmdoutput.json
+    JSON_PARSE=OK  top_keys=['command']
+    HAS_command.ps=YES  type=list  entries=73
+    sample_entry={'COMMAND': '/lib/systemd/systemd --system --deserialize 20', 'CPU': 0.0, 'MEM': 0.8852285391357956, 'PID': 1, 'RSS': 4587520, 'START': 'Jul22', 'STAT': 'Ss', 'TIME': 0.48, 'TTY': '?', 'USER': 'root', 'VSZ': 180281344}
+===== file perms (cowrie must be able to read it) =====
+-rw-r----- 1 root cowrie 21102 Sep 16 20:07 /opt/cowrie/share/cowrie/cmdoutput.json
+COWRIE_USER_CAN_READ=yes
+
+--- STDERR ---

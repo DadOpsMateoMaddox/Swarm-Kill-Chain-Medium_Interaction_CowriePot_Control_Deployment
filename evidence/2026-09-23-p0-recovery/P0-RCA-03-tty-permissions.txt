@@ -1,0 +1,195 @@
+P0-RCA-03 — TTY LOG DIRECTORY OWNERSHIP
+=======================================
+ttylog defaults (cowrie.cfg.dist, never overridden in live config):
+    ttylog = true
+    ttylog_path = ${honeypot:state_path}/tty     -> var/lib/cowrie/tty
+
+/opt/cowrie/src/cowrie/insults/insults.py
+    line 47-50  type = "e" (exec) or "i" (interactive)   <-- BOTH modes
+    line 61-69  connectionMade -> ttylog.ttylog_open(self.ttylogFile, ...)
+    line 214-221 ttylog_close -> os.rename(ttylogFile, shasumfile)
+
+PRE-REPAIR DIRECTORY STATE — tty was the ONLY outlier among siblings:
+    /opt/cowrie/var/log/cowrie            cowrie:cowrie 750  WRITABLE
+    /opt/cowrie/var/lib/cowrie            cowrie:cowrie 750  WRITABLE
+    /opt/cowrie/var/lib/cowrie/downloads  cowrie:cowrie 750  WRITABLE
+    /opt/cowrie/var/lib/cowrie/tty        root:cowrie   750  NOT WRITABLE
+
+    builtins.PermissionError: [Errno 13] Permission denied:
+      'var/lib/cowrie/tty/20260923-074258-5842dde7dd2c-0e.log'
+
+CLASSIFICATION (four-way, resolved):
+    configuration          NO  (ttylog_path resolves correctly)
+    directory creation     NO  (directory exists)
+    filename construction  NO  (insults.py:62-68 builds a valid name)
+    permissions            YES (root-owned, group lacks write)
+
+Because connectionMade runs upstream of the exec/interactive split, this
+killed BOTH modes identically.
+
+REMEDIATION: chown cowrie:cowrie (mode 750 retained)
+
+--- FULL TRACEBACK + DIRECTORY STATE ---
+===== COMPLETE FINAL TRACEBACK (tail 22) =====
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.factory.CowrieSSHFactory] New connection: 127.0.0.1:50924 (127.0.0.1:2222) [session: 5842dde7dd2c]
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] Remote SSH version: SSH-2.0-OpenSSH_7.4
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] SSH client hassh fingerprint: 41ad223a9005f59c1bd3eee3cef3cab0
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] kex alg=b'curve25519-sha256' key alg=b'ssh-ed25519'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] outgoing: b'aes128-ctr' b'hmac-sha2-512' b'none'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] incoming: b'aes128-ctr' b'hmac-sha2-512' b'none'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] NEW KEYS
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] starting service b'ssh-userauth'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'root' trying auth b'none'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'root' trying auth b'password'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] Initialized emulated server as architecture: linux-x64-lsb
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.userauth.HoneyPotSSHUserAuthServer#debug] b'root' authenticated with b'password'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#debug] starting service b'ssh-connection'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.connection.CowrieSSHConnection#debug] got channel b'session' request
+--
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/src/cowrie/insults/insults.py", line 69, in connectionMade
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: ttylog.ttylog_open(self.ttylogFile, self.startTime)
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: File "/opt/cowrie/src/cowrie/core/ttylog.py", line 27, in ttylog_open
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: with open(logfile, "ab") as f:
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: builtins.PermissionError: [Errno 13] Permission denied: 'var/lib/cowrie/tty/20260923-074258-5842dde7dd2c-0e.log'
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] avatar root logging out
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [cowrie.ssh.transport.HoneyPotSSHTransport#info] connection lost
+2026-09-23T07:42:58+0000 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:42:58+0000 [HoneyPotSSHTransport,2,127.0.0.1] Connection lost after 0 seconds
+===== ttylog-related config (live) =====
+18:log_path = /opt/cowrie/var/log/cowrie
+19:download_path = /opt/cowrie/var/lib/cowrie/downloads
+===== ttylog defaults in dist =====
+96:ttylog = true
+100:ttylog_path = ${honeypot:state_path}/tty
+===== state_path / ttylog dir existence + perms =====
+total 20
+drwxr-x--- 5 cowrie cowrie 185 Sep 16 20:07 .
+drwxr-x--- 3 cowrie cowrie  20 Sep 16 20:07 ..
+drwxr-x--- 2 cowrie cowrie  24 Sep 16 20:07 downloads
+-rw-r----- 1 root   cowrie  28 Sep 16 20:07 .gitignore
+drwxr-x--- 2 root   cowrie  24 Sep 16 20:07 snapshots
+-rw-r----- 1 cowrie cowrie 227 Sep 16 20:07 ssh_host_ecdsa_key
+-rw-r----- 1 cowrie cowrie 160 Sep 16 20:07 ssh_host_ecdsa_key.pub
+-rw-r----- 1 cowrie cowrie 387 Sep 16 20:07 ssh_host_ed25519_key
+-rw-r----- 1 cowrie cowrie  80 Sep 16 20:07 ssh_host_ed25519_key.pub
+drwxr-x--- 2 root   cowrie  24 Sep 16 20:07 tty
+drwxr-x--- 2 root cowrie 24 Sep 16 20:07 /opt/cowrie/var/lib/cowrie/tty
+===== insults.py context =====
+    45	        insults.ServerProtocol.__init__(self, protocolFactory, *a, **kw)
+    46	
+    47	        if protocolFactory is protocol.HoneyPotExecProtocol:
+    48	            self.type = "e"  # Execcmd
+    49	        else:
+    50	            self.type = "i"  # Interactive
+    51	
+    52	    def getSessionId(self):
+    53	        transportId = self.transport.session.conn.transport.transportId
+    54	        channelId = self.transport.session.id
+    55	        return (transportId, channelId)
+    56	
+    57	    def connectionMade(self) -> None:
+    58	        transportId, channelId = self.getSessionId()
+    59	        self.startTime = time.time()
+    60	
+    61	        if self.ttylogEnabled:
+    62	            self.ttylogFile = "{}/{}-{}-{}{}.log".format(
+    63	                self.ttylogPath,
+    64	                time.strftime("%Y%m%d-%H%M%S"),
+    65	                transportId,
+    66	                channelId,
+    67	                self.type,
+    68	            )
+    69	            ttylog.ttylog_open(self.ttylogFile, self.startTime)
+    70	            self.ttylogOpen = True
+    71	            self.ttylogSize = 0
+    72	
+    73	        self.stdinlogFile = "{}/{}-{}-{}-stdin.log".format(
+    74	            self.downloadPath,
+    75	            time.strftime("%Y%m%d-%H%M%S"),
+    76	            transportId,
+    77	            channelId,
+    78	        )
+    79	
+    80	        if self.type == "e":
+
+--- STDERR ---
+
+
+--- FOUR-WAY CLASSIFICATION DIAGNOSTIC ---
+===== TTYLOG CONFIG REFERENCES =====
+/opt/cowrie/etc/cowrie.cfg.dist:96:ttylog = true
+/opt/cowrie/etc/cowrie.cfg.dist:99:# (default: ttylog_path = %(state_path)s/tty)
+/opt/cowrie/etc/cowrie.cfg.dist:100:ttylog_path = ${honeypot:state_path}/tty
+--- src refs to ttylogPath/ttylogFile ---
+/opt/cowrie/src/cowrie/insults/insults.py:24:    ttylogPath: str = CowrieConfig.get("honeypot", "ttylog_path")
+/opt/cowrie/src/cowrie/insults/insults.py:26:    ttylogEnabled: bool = CowrieConfig.getboolean("honeypot", "ttylog", fallback=True)
+/opt/cowrie/src/cowrie/insults/insults.py:33:        self.ttylogFile: str
+/opt/cowrie/src/cowrie/insults/insults.py:61:        if self.ttylogEnabled:
+/opt/cowrie/src/cowrie/insults/insults.py:62:            self.ttylogFile = "{}/{}-{}-{}{}.log".format(
+/opt/cowrie/src/cowrie/insults/insults.py:63:                self.ttylogPath,
+/opt/cowrie/src/cowrie/insults/insults.py:69:            ttylog.ttylog_open(self.ttylogFile, self.startTime)
+/opt/cowrie/src/cowrie/insults/insults.py:83:            if self.ttylogEnabled:
+/opt/cowrie/src/cowrie/insults/insults.py:86:                    self.ttylogFile, len(cmd), ttylog.TYPE_INTERACT, time.time(), cmd
+/opt/cowrie/src/cowrie/insults/insults.py:97:        if self.ttylogEnabled and self.ttylogOpen:
+/opt/cowrie/src/cowrie/insults/insults.py:99:                self.ttylogFile, len(data), ttylog.TYPE_OUTPUT, time.time(), data
+/opt/cowrie/src/cowrie/insults/insults.py:118:        elif self.ttylogEnabled and self.ttylogOpen:
+/opt/cowrie/src/cowrie/insults/insults.py:120:                self.ttylogFile, len(data), ttylog.TYPE_INPUT, time.time(), data
+/opt/cowrie/src/cowrie/insults/insults.py:210:        if self.ttylogEnabled and self.ttylogOpen:
+/opt/cowrie/src/cowrie/insults/insults.py:211:            ttylog.ttylog_close(self.ttylogFile, time.time())
+/opt/cowrie/src/cowrie/insults/insults.py:213:            shasum = ttylog.ttylog_inputhash(self.ttylogFile)
+/opt/cowrie/src/cowrie/insults/insults.py:214:            shasumfile = os.path.join(self.ttylogPath, shasum)
+/opt/cowrie/src/cowrie/insults/insults.py:218:                os.remove(self.ttylogFile)
+/opt/cowrie/src/cowrie/insults/insults.py:221:                os.rename(self.ttylogFile, shasumfile)
+/opt/cowrie/src/cowrie/output/mongodb.py:116:                entry["ttylogpath"] = entry["ttylog"]
+===== COWRIE [honeypot] PATH CONFIG (live) =====
+[honeypot]
+hostname = gmu-server
+log_path = /opt/cowrie/var/log/cowrie
+download_path = /opt/cowrie/var/lib/cowrie/downloads
+contents_path = /opt/cowrie/honeyfs
+txtcmds_path = /opt/cowrie/share/cowrie/txtcmds
+backend = shell
+
+[ssh]
+===== state_path default in dist =====
+35:log_path = var/log/cowrie
+41:download_path = ${honeypot:state_path}/downloads
+47:share_path = share/cowrie
+53:state_path = var/lib/cowrie
+===== EXPECTED LOG DIRECTORIES =====
+/opt/cowrie/var owner=cowrie:cowrie mode=750 type=directory
+/opt/cowrie/var/log owner=cowrie:cowrie mode=750 type=directory
+/opt/cowrie/var/log/cowrie owner=cowrie:cowrie mode=750 type=directory
+/opt/cowrie/var/lib owner=cowrie:cowrie mode=750 type=directory
+/opt/cowrie/var/lib/cowrie owner=cowrie:cowrie mode=750 type=directory
+/opt/cowrie/var/lib/cowrie/tty owner=root:cowrie mode=750 type=directory
+/opt/cowrie/var/lib/cowrie/downloads owner=cowrie:cowrie mode=750 type=directory
+===== COWRIE USER WRITE TESTS (non-destructive) =====
+WRITABLE           /opt/cowrie/var/log/cowrie
+WRITABLE           /opt/cowrie/var/lib/cowrie
+NOT_WRITABLE       /opt/cowrie/var/lib/cowrie/tty
+WRITABLE           /opt/cowrie/var/lib/cowrie/downloads
+===== ttylogFile CONSTRUCTION =====
+    28	        "honeypot", "download_limit_size", fallback=0
+    29	    )
+    30	
+    31	    def __init__(self, protocolFactory=None, *a, **kw):
+    32	        self.type: str
+    33	        self.ttylogFile: str
+    34	        self.ttylogSize: int = 0
+    35	        self.bytesReceived: int = 0
+    36	        self.redirFiles: set[list[str]] = set()
+    37	        self.redirlogOpen: bool = False  # it will be set at core/protocol.py
+    38	        self.stdinlogOpen: bool = False
+    39	        self.ttylogOpen: bool = False
+    40	        self.terminalProtocol: Any
+    41	        self.transport: Any
+    42	        self.startTime: float
+    43	        self.stdinlogFile: str
+    44	
+    45	        insults.ServerProtocol.__init__(self, protocolFactory, *a, **kw)
+    46	
+===== cowrie process CWD (relative path base) =====
+/opt/cowrie
+
+--- STDERR ---

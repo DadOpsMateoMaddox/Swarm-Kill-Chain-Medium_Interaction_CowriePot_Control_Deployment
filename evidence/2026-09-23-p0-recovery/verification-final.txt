@@ -1,0 +1,39 @@
+===== STATE PROOF =====
+/opt/cowrie/var/lib/cowrie/tty owner=cowrie:cowrie mode=750
+TTY_WRITABLE=YES
+
+===== CAUSAL TEST: single Ed25519 exec path =====
+SSH_EXIT=0
+HONEYPOT_STDOUT=[root
+]
+--- client stderr signals ---
+(none)
+
+===== JOURNAL SINCE PROBE =====
+Sep 23 07:49:24 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [HoneyPotSSHTransport,3,127.0.0.1] login attempt [b'root'/b'P0-VALIDATION-20260923'] succeeded
+Sep 23 07:49:24 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [twisted.conch.ssh.session#info] Executing command "b'whoami'"
+Sep 23 07:49:24 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,3,127.0.0.1] CMD: whoami
+Sep 23 07:49:24 ip-10-0-1-246.ec2.internal twistd[13861]: 2026-09-23T07:49:24+0000 [SSHChannel session (0) on SSHService b'ssh-connection' on HoneyPotSSHTransport,3,127.0.0.1] Command found: whoami
+--- forbidden signals ---
+error_line_count=0
+
+===== JSON TELEMETRY (latest 127.0.0.1 session) =====
+session 7467e75c8448
+    cowrie.session.connect 
+    cowrie.client.version 
+    cowrie.client.kex 
+    cowrie.login.success  user='root'
+    cowrie.client.var 
+    cowrie.session.params 
+    cowrie.command.input  input='whoami'
+    cowrie.log.closed 
+    cowrie.session.closed  dur=0.051
+
+===== TTYLOG FILES =====
+total 8
+drwxr-x--- 2 cowrie cowrie  96 Sep 23 07:49 .
+drwxr-x--- 5 cowrie cowrie 185 Sep 16 20:07 ..
+-rw-r----- 1 cowrie cowrie 107 Sep 23 07:49 f25297859cf0a70af5c053a5464a5fa647a35ceee1d91397331903846d79ffc1
+-rw-r----- 1 root   cowrie   2 Sep 16 20:07 .gitignore
+
+--- STDERR ---

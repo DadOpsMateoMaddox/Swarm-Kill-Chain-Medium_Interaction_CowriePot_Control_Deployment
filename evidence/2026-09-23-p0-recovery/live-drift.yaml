@@ -1,0 +1,80 @@
+# Live-vs-IaC divergence record.
+#
+# The project invariant is that deployed state is established from the live
+# CloudFormation template and live resource state, never inferred from Git.
+# These three repairs were applied directly to the running instance to
+# restore a broken sensor. They exist in NO template and will NOT survive an
+# instance replacement. This file exists so the divergence is governed
+# rather than silently accumulated.
+
+live_drift:
+  instance: i-00270aeefb6266a7b
+  applied_utc: "2026-09-23T07:27:48Z .. 2026-09-23T07:49:24Z"
+  status: INTENTIONAL_TEMPORARY_REPAIR
+  authorized_by: operator (live P0 incident)
+  durable_iac_status: PENDING
+
+  changes:
+    - id: P0A
+      target: /opt/cowrie/etc/ssh_host_{rsa,ed25519}_key{,.pub} + [ssh] config
+      old: "Ed25519 material assigned to rsa_* slot; no ed25519_* slot configured; no RSA key present"
+      new: "type-correct RSA 3072 in rsa_*; preserved Ed25519 (SHA256:E4D4gLIM...) in ed25519_*"
+      reversible: true
+      backup: /opt/cowrie/etc/p0-backup-20260923T072748Z/
+      fingerprint_continuity: PRESERVED   # attacker-visible host identity unchanged
+
+    - id: P0B1
+      target: /opt/cowrie/etc/cowrie.cfg  "[shell] processes"
+      old: "5"
+      new: "/opt/cowrie/share/cowrie/cmdoutput.json"
+      reversible: true
+      backup: /opt/cowrie/etc/p0b-backup-20260923T074252Z/cowrie.cfg
+
+    - id: P0B2
+      target: /opt/cowrie/var/lib/cowrie/tty
+      old: "root:cowrie 0750"
+      new: "cowrie:cowrie 0750"
+      reversible: true
+      backup: null   # ownership change only; original state recorded in this file
+
+# What the durable repair must encode, so a replacement node does not
+# recreate these defects:
+durable_repair_requirements:
+  - id: P0A
+    requirement: >
+      Install Ed25519 secret material into the ed25519_* slot and generate
+      (or supply) type-correct RSA material for the rsa_* slot. The current
+      bootstrap installs the Ed25519 key at the RSA path.
+    affected_artifact: native/bootstrap-native.sh, cowrie.cfg
+
+  - id: P0B1
+    requirement: >
+      Ship "processes = /opt/cowrie/share/cowrie/cmdoutput.json". The
+      repository's cowrie.cfg still contains "processes = 5".
+    affected_artifact: cowrie.cfg
+
+  - id: P0B2
+    requirement: >
+      Create the tty directory with declared ownership and mode atomically,
+      e.g. "install -d -o cowrie -g cowrie -m 750
+      /opt/cowrie/var/lib/cowrie/tty", rather than a bare mkdir.
+    affected_artifact: native/bootstrap-native.sh
+
+# Delivery constraint carried over from the H2 gate: bootstrap-native.sh is
+# BootstrapBundleId -> UserData -> instance replacement. Any repair shipped
+# through that path replaces the running instance and ends the current
+# observational epoch. Live-instance repair must therefore go via an SSM
+# Association, as AuthParity and H2 both did.
+delivery_constraint:
+  bootstrap_native_sh: "BootstrapBundleId -> UserData -> REPLACEMENT HAZARD"
+  safe_path_for_running_instance: "SSM Association (AuthParity/H2 precedent)"
+
+validation_traffic:
+  synthetic: true
+  source_ip: 127.0.0.1
+  marker_credential: "root / P0-VALIDATION-20260923"
+  exclude_from_attacker_statistics: true
+  note: >
+    Generated on-instance against the loopback listener. No traffic was
+    directed at Control-0's public interface and no synthetic events were
+    injected into the Cowrie corpus.
