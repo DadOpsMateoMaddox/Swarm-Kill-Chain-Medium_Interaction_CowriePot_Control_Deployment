@@ -19,6 +19,11 @@ correctly, but H2's real-world *input* was empty for that window. No
 conclusion about attacker behaviour may be drawn from pre-2026-09-23
 enrichment output.
 
+Two additional sensors are now in **design and implementation**, but neither is
+deployed yet. Supporting work already completed includes preparation of the
+2025 corpus, the current research corpus used for the 2026 experiment, and a
+mock dashboard for the broader multi-sensor workflow.
+
 ## Open ledger
 
 | ID | Item | Status | Notes |
@@ -41,31 +46,34 @@ through the deployment path, not through SSM.
 Do not conflate two claims: "P0B2 existed and is fixed" is **VERIFIED**;
 "P0B2 caused the Sep-18 observation" is **NOT YET VERIFIED**.
 
-## Deferred to next session — do not start tonight
+## Additional sensors — design/implementation underway
 
-Two more sensors, not yet begun, no design work done on either:
+Two additional honeypots are actively being designed and implemented. They are
+not yet deployed:
 
-1. **Another Cowrie instance** (medium-interaction) — presumably a second
-   independent sensor, not a modification of Control-0. Scope,
-   provisioning bundle strategy, and evidence-bucket layout (shared vs.
-   per-sensor) all still need deciding before any implementation.
-2. **One high-interaction honeypot** — a materially different threat
-   model from Cowrie's medium-interaction design (real OS/services vs.
-   simulated), so this needs its own architecture/isolation review before
-   any template or bootstrap work starts, not just a copy of Control-0's
-   pattern.
+1. **Second Cowrie sensor** (medium-interaction) — a separate experimental
+   sensor derived from the Control-0 baseline. Work is underway on the
+   experiment design, shared/reused corpus, dashboard workflow, provisioning
+   approach, evidence layout, and deployment boundaries.
+2. **High-interaction honeypot** — a materially different threat model from
+   Cowrie's medium-interaction design (real OS/services vs. simulated). Design
+   and implementation work is underway, including how the current research
+   corpus and dashboard workflow map into the richer environment. Its
+   architecture, isolation controls, and deployment gate remain distinct from
+   Control-0.
 
-Neither should be started as an extension of tonight's H2 momentum —
-each deserves its own fresh design pass, and forcing scope onto an
-already-closed gate's session risks disturbing the known-good state
-recorded above for no benefit.
+The fact that supporting design artifacts and corpus preparation exist should
+not be conflated with deployment. Neither additional sensor is currently live.
 
 ## Picking this back up
 
-Read `evidence/H2-GATE.md` and `evidence/AUTH-PARITY-GATE.md` first —
-both gates are closed and should not be reopened absent an actual
-behavioral defect. Then scope the two new sensors as their own gates,
-following the same discipline established here: live-template-derived
-change sets, structural scope guards, behavioral test suites before any
-AWS write, review-only change sets before execution, and evidence files
-recording each step.
+For Control-0, read `evidence/H2-GATE.md` and `evidence/AUTH-PARITY-GATE.md`
+first — both gates are closed and should not be reopened absent an actual
+behavioral defect. Reconcile `DRIFT-01` through the deployment path before any
+new live-only fix.
+
+For the two additional sensors, continue their design/implementation as their
+own gated workstreams using the same discipline established here:
+live-template-derived change sets where applicable, structural scope guards,
+behavioral test suites before AWS writes, review-only change sets before
+execution, and evidence files recording each step.
